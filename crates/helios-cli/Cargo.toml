@@ -1,0 +1,15 @@
+[package]
+name = "helios-cli"
+description = "Headless scan/report front end for the Helios engine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "helios"
+path = "src/main.rs"
+
+[dependencies]
+helios-core = { path = "../helios-core" }

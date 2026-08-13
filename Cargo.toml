@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = ["crates/helios-core", "crates/helios-cli"]
+# src-tauri is intentionally its own workspace: the desktop shell pulls in the
+# full Tauri/WebKit toolchain, and we want `cargo test` on the engine to stay
+# fast and buildable on any host (CI, Linux dev boxes, headless runners).
+exclude = ["src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+license = "MIT"
+repository = "https://github.com/patrickr-88/helios"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+crossbeam-channel = "0.5"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
