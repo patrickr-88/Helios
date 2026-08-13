@@ -93,23 +93,32 @@ fn parse_args(argv: &[String]) -> Result<Args, String> {
     let mut i = 0;
     while i < argv.len() {
         let arg = argv[i].as_str();
-        let mut value = |name: &str| -> Result<String, String> {
+        let value = |name: &str| -> Result<String, String> {
             argv.get(i + 1)
                 .cloned()
                 .ok_or_else(|| format!("{name} needs a value"))
         };
         match arg {
             "--top" => {
-                args.top = value("--top")?.parse().map_err(|_| "--top must be a number")?;
+                args.top = value("--top")?
+                    .parse()
+                    .map_err(|_| "--top must be a number")?;
                 i += 1;
             }
             "--threads" => {
-                args.threads =
-                    Some(value("--threads")?.parse().map_err(|_| "--threads must be a number")?);
+                args.threads = Some(
+                    value("--threads")?
+                        .parse()
+                        .map_err(|_| "--threads must be a number")?,
+                );
                 i += 1;
             }
             "--depth" => {
-                args.depth = Some(value("--depth")?.parse().map_err(|_| "--depth must be a number")?);
+                args.depth = Some(
+                    value("--depth")?
+                        .parse()
+                        .map_err(|_| "--depth must be a number")?,
+                );
                 i += 1;
             }
             "--format" => {
@@ -138,8 +147,8 @@ fn parse_args(argv: &[String]) -> Result<Args, String> {
 fn cmd_volumes() -> Result<(), String> {
     let volumes = platform::volumes();
     println!(
-        "{:<24} {:<20} {:>10} {:>10} {:>10}  {}",
-        "VOLUME", "MOUNT", "SIZE", "USED", "FREE", "TYPE"
+        "{:<24} {:<20} {:>10} {:>10} {:>10}  TYPE",
+        "VOLUME", "MOUNT", "SIZE", "USED", "FREE"
     );
     for v in &volumes {
         let mut kind = v.filesystem.clone();
@@ -243,7 +252,7 @@ fn cmd_scan(argv: &[String], as_report: bool) -> Result<(), String> {
         let _ = std::io::stderr().flush();
     });
     if show_progress {
-        eprint!("\r{:<width$}\r", "", width = last_len);
+        eprint!("\r{:<last_len$}\r", "");
     }
 
     if outcome.state == ScanState::Cancelled {
@@ -280,12 +289,18 @@ fn cmd_scan(argv: &[String], as_report: bool) -> Result<(), String> {
         match &args.out {
             Some(out) => {
                 std::fs::write(out, &bytes).map_err(|e| format!("{}: {e}", out.display()))?;
-                eprintln!("wrote {} ({})", out.display(), human_bytes(bytes.len() as u64));
+                eprintln!(
+                    "wrote {} ({})",
+                    out.display(),
+                    human_bytes(bytes.len() as u64)
+                );
             }
             None if args.format == "pdf" => {
                 return Err("--out is required for PDF output".into());
             }
-            None => std::io::stdout().write_all(&bytes).map_err(|e| e.to_string())?,
+            None => std::io::stdout()
+                .write_all(&bytes)
+                .map_err(|e| e.to_string())?,
         }
         return Ok(());
     }
@@ -332,7 +347,10 @@ fn print_summary(
         human_bytes(stats.memory_bytes)
     );
     if stats.dirs_reused > 0 {
-        println!("  {} folders reused from the previous snapshot", stats.dirs_reused);
+        println!(
+            "  {} folders reused from the previous snapshot",
+            stats.dirs_reused
+        );
     }
     if let Some(v) = volume {
         let pct = if v.total_bytes > 0 {
@@ -356,7 +374,12 @@ fn print_table(title: &str, entries: &[query::Entry]) {
         println!("  (nothing to show)");
         return;
     }
-    let width = entries.iter().map(|e| e.name.chars().count()).max().unwrap_or(0).min(52);
+    let width = entries
+        .iter()
+        .map(|e| e.name.chars().count())
+        .max()
+        .unwrap_or(0)
+        .min(52);
     for (i, e) in entries.iter().enumerate() {
         println!(
             "  {:>3}. {:<width$}  {:>10}  {}",

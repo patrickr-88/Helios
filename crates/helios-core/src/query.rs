@@ -159,7 +159,7 @@ impl Filter {
         let name = tree.name(id);
         if !self.extensions.is_empty() {
             match extension_of(name) {
-                Some(ext) if self.extensions.iter().any(|e| *e == ext) => {}
+                Some(ext) if self.extensions.contains(&ext) => {}
                 _ => return false,
             }
         }
@@ -223,7 +223,9 @@ fn sort_entries(rows: &mut [Entry], sort: SortKey, descending: bool) {
         SortKey::Modified => rows.sort_unstable_by_key(|e| e.mtime),
         SortKey::Count => rows.sort_unstable_by_key(|e| e.file_count),
         // Case-insensitive so "Zebra" and "apple" sort the way Finder shows them.
-        SortKey::Name => rows.sort_unstable_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
+        SortKey::Name => {
+            rows.sort_unstable_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        }
     }
     if descending {
         rows.reverse();
@@ -367,8 +369,26 @@ mod tests {
             0,
             0,
         );
-        t.push_node("big.mp4", media, 2, NodeFlags::empty(), Category::Videos, 900, 900, 50);
-        t.push_node("small.jpg", media, 2, NodeFlags::empty(), Category::Images, 100, 100, 150);
+        t.push_node(
+            "big.mp4",
+            media,
+            2,
+            NodeFlags::empty(),
+            Category::Videos,
+            900,
+            900,
+            50,
+        );
+        t.push_node(
+            "small.jpg",
+            media,
+            2,
+            NodeFlags::empty(),
+            Category::Images,
+            100,
+            100,
+            150,
+        );
         t.push_node(
             ".secret.txt",
             NodeId::ROOT,
@@ -396,11 +416,25 @@ mod tests {
     #[test]
     fn hidden_and_system_are_excluded_by_default() {
         let t = tree();
-        let rows = children(&t, NodeId::ROOT, &Filter::default(), SortKey::Size, true, 100);
+        let rows = children(
+            &t,
+            NodeId::ROOT,
+            &Filter::default(),
+            SortKey::Size,
+            true,
+            100,
+        );
         let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, vec!["media"]);
 
-        let rows = children(&t, NodeId::ROOT, &Filter::permissive(), SortKey::Size, true, 100);
+        let rows = children(
+            &t,
+            NodeId::ROOT,
+            &Filter::permissive(),
+            SortKey::Size,
+            true,
+            100,
+        );
         assert_eq!(rows.len(), 3);
     }
 
@@ -471,7 +505,10 @@ mod tests {
         let total: u64 = rows.iter().map(|r| r.bytes).sum();
         assert_eq!(total, t.total_logical());
 
-        let videos = rows.iter().find(|r| r.category == Category::Videos).unwrap();
+        let videos = rows
+            .iter()
+            .find(|r| r.category == Category::Videos)
+            .unwrap();
         assert_eq!(videos.bytes, 900);
         assert!((videos.fraction - 0.9 / 1.51).abs() < 0.01);
     }

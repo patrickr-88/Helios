@@ -7,16 +7,13 @@ volumes, shows you the answer as a treemap, a folder tree, a list of the largest
 things you own and a breakdown by kind of file — and it never modifies,
 deletes, moves or renames anything, and never touches the network.
 
-```
-┌──────────────┬────────────────────────────────────────────────────────┐
-│ VOLUMES      │  Dashboard  Treemap  Folders  Largest  Categories       │
-│ ▸ Macintosh  │ ┌──────────────┬───────────┬────────┐                   │
-│   HD         │ │              │  Photos   │ Xcode  │  Treemap: every   │
-│   826 GB free│ │   Movies     ├───────────┼────────┤  rectangle sized  │
-│ ▸ Backup     │ │   412 GB     │  iCloud   │ Docker │  by what it uses  │
-│   1.2 TB free│ └──────────────┴───────────┴────────┘                   │
-└──────────────┴────────────────────────────────────────────────────────┘
-```
+![Helios dashboard](docs/screenshots/dashboard.png)
+
+*Real screenshots of the app running against a real filesystem — on the Linux
+development box, which is why the volume names are unglamorous and everything
+classifies as a system file. `docs/WIREFRAMES.md` annotates every screen.*
+
+![Helios treemap](docs/screenshots/treemap.png)
 
 ## What it does
 
@@ -47,7 +44,7 @@ app's Tauri capability file grants no filesystem, shell, or HTTP plugin at all.
 The engine and CLI build anywhere Rust does:
 
 ```sh
-cargo test                              # 66 tests, no platform assumptions
+cargo test                              # 67 tests, no platform assumptions
 cargo build --release -p helios-cli
 
 ./target/release/helios volumes         # every mounted volume

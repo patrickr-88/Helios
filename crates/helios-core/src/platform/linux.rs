@@ -21,6 +21,9 @@ pub const DEFAULT_EXCLUSIONS: &[&str] = &["/proc", "/sys", "/dev", "/run"];
 /// every total.
 const PSEUDO_FILESYSTEMS: &[&str] = &[
     "proc",
+    // tmpfs is RAM, not disk: /dev/shm and the cgroup mounts would otherwise
+    // show up in the sidebar as volumes with capacity the user cannot fill.
+    "tmpfs",
     "sysfs",
     "devtmpfs",
     "devpts",
@@ -99,12 +102,16 @@ pub fn volumes() -> Vec<Volume> {
         let Some(st) = statvfs(&mount_point) else {
             continue;
         };
-        let block = if st.f_frsize > 0 { st.f_frsize } else { st.f_bsize } as u64;
-        let total = st.f_blocks as u64 * block;
+        let block: u64 = if st.f_frsize > 0 {
+            st.f_frsize
+        } else {
+            st.f_bsize
+        };
+        let total = st.f_blocks * block;
         if total == 0 {
             continue;
         }
-        let free = st.f_bavail as u64 * block;
+        let free = st.f_bavail * block;
         seen.push(mount_point.clone());
 
         out.push(Volume {

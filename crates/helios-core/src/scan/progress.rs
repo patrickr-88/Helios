@@ -104,7 +104,10 @@ mod tests {
     fn no_eta_before_the_warmup_window() {
         let mut est = EtaEstimator::new(Some(1_000_000));
         let (eta, fraction) = est.update(100_000);
-        assert!(eta.is_none(), "ETA must stay silent while it would be noise");
+        assert!(
+            eta.is_none(),
+            "ETA must stay silent while it would be noise"
+        );
         assert_eq!(fraction, Some(0.1));
     }
 

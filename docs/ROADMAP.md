@@ -4,7 +4,7 @@
 
 Phases 1–4 are built and tested. The engine, the six views, search and
 filtering, all three export formats, the snapshot cache and incremental rescans
-are working, with 66 tests passing and totals verified byte-for-byte against
+are working, with 67 tests passing and totals verified byte-for-byte against
 `du`. What remains before a 1.0 is mostly *proof on real hardware*: the macOS
 backend has never been compiled on a Mac, and the Windows backend has never been
 compiled at all.
@@ -47,7 +47,7 @@ done and verified; everything platform-specific is written and unverified.
 - [x] No network code, no telemetry — enforced by tests
 - [ ] Signed, notarized `.dmg`
 - [ ] Full Disk Access onboarding flow
-- [ ] App icon
+- [x] App icon
 
 ## Phases
 
@@ -68,7 +68,7 @@ CSV/JSON/PDF export.
 **Phase 5 — macOS hardening** ← next
 Build and run on real Macs. Verify against Finder and DaisyDisk on APFS,
 including a Time Machine volume and an SMB share. Full Disk Access onboarding.
-Icon, signing, notarization, `.dmg`. Test on a genuinely full 2 TB drive with a
+Signing, notarization, `.dmg`. Test on a genuinely full 2 TB drive with a
 Photos library and a Time Machine local snapshot.
 
 **Phase 6 — Windows**
@@ -151,6 +151,7 @@ disk would undo the security story in one release.
 - [x] Tests that run on any platform with no display and no bundling
 - [x] A CLI that makes the engine usable and benchmarkable on its own
 - [x] Three dependencies in the engine; ~3,000 lines of readable Rust
-- [ ] CI matrix (macOS, Windows, Linux) with fmt, clippy and the test suite
+- [x] CI matrix (macOS, Windows, Linux) with fmt, clippy and the test suite
+      — the Windows job is non-blocking until Phase 6 lands
 - [ ] CONTRIBUTING.md and issue templates
 - [ ] Homebrew cask

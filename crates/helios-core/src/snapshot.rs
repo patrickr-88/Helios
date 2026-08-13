@@ -126,7 +126,10 @@ impl<'a> Reader<'a> {
     fn bytes(&mut self) -> io::Result<&'a [u8]> {
         let len = self.u64()?;
         if len > MAX_NAMES_BYTES {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "length out of range"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "length out of range",
+            ));
         }
         self.take(len as usize)
     }
@@ -190,7 +193,10 @@ pub fn write_to(out: impl Write, snapshot: &Snapshot) -> io::Result<()> {
 pub fn read_from(buf: &[u8]) -> io::Result<Snapshot> {
     let mut r = Reader { buf, pos: 0 };
     if r.take(8)? != MAGIC {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "not a Helios snapshot"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "not a Helios snapshot",
+        ));
     }
     let version = r.u32()?;
     if version != FORMAT_VERSION {
@@ -205,19 +211,24 @@ pub fn read_from(buf: &[u8]) -> io::Result<Snapshot> {
     let volume_id = r.string()?;
     let root_path = PathBuf::from(r.string()?);
     let scanned_at = r.i64()?;
-    let mut stats = ScanStats::default();
-    stats.files_scanned = r.u64()?;
-    stats.dirs_scanned = r.u64()?;
-    stats.bytes_seen = r.u64()?;
-    stats.dirs_reused = r.u64()?;
-    stats.errors = r.u64()?;
-    stats.elapsed_ms = r.u64()?;
-    stats.nodes = r.u64()?;
-    stats.memory_bytes = r.u64()?;
+    // Field order here must match the write side exactly.
+    let stats = ScanStats {
+        files_scanned: r.u64()?,
+        dirs_scanned: r.u64()?,
+        bytes_seen: r.u64()?,
+        dirs_reused: r.u64()?,
+        errors: r.u64()?,
+        elapsed_ms: r.u64()?,
+        nodes: r.u64()?,
+        memory_bytes: r.u64()?,
+    };
 
     let count = r.u64()?;
     if count > MAX_NODES {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "node count out of range"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "node count out of range",
+        ));
     }
     let mut nodes = Vec::with_capacity(count as usize);
     for _ in 0..count {
@@ -273,7 +284,10 @@ pub fn read_from(buf: &[u8]) -> io::Result<Snapshot> {
 }
 
 fn category_from_u16(v: u16) -> Category {
-    Category::ALL.get(v as usize).copied().unwrap_or(Category::Other)
+    Category::ALL
+        .get(v as usize)
+        .copied()
+        .unwrap_or(Category::Other)
 }
 
 /// Writes a snapshot to the cache directory, atomically.
@@ -350,8 +364,26 @@ mod tests {
             0,
             42,
         );
-        tree.push_node("épée.mp4", dir, 2, NodeFlags::empty(), Category::Videos, 4096, 4096, 7);
-        tree.push_node(".hidden", NodeId::ROOT, 1, NodeFlags::HIDDEN, Category::Other, 1, 1, 0);
+        tree.push_node(
+            "épée.mp4",
+            dir,
+            2,
+            NodeFlags::empty(),
+            Category::Videos,
+            4096,
+            4096,
+            7,
+        );
+        tree.push_node(
+            ".hidden",
+            NodeId::ROOT,
+            1,
+            NodeFlags::HIDDEN,
+            Category::Other,
+            1,
+            1,
+            0,
+        );
         tree.errors.push(ScanError {
             path: "/Volumes/Sample/locked".into(),
             message: "permission denied".into(),
@@ -392,7 +424,10 @@ mod tests {
             .find(Path::new("/Volumes/Sample/Movies/épée.mp4"))
             .expect("path lookup after reload");
         assert_eq!(restored.tree.node(movie).category, Category::Videos);
-        let hidden = restored.tree.find(Path::new("/Volumes/Sample/.hidden")).unwrap();
+        let hidden = restored
+            .tree
+            .find(Path::new("/Volumes/Sample/.hidden"))
+            .unwrap();
         assert!(restored.tree.node(hidden).flags.contains(NodeFlags::HIDDEN));
     }
 
@@ -402,7 +437,10 @@ mod tests {
 
         let mut buf = Vec::new();
         write_to(&mut buf, &sample()).unwrap();
-        assert!(read_from(&buf[..buf.len() / 2]).is_err(), "truncation must be caught");
+        assert!(
+            read_from(&buf[..buf.len() / 2]).is_err(),
+            "truncation must be caught"
+        );
 
         buf[8] = 0xFF; // bump the version
         assert!(read_from(&buf).is_err(), "unknown version must be rejected");
@@ -415,7 +453,10 @@ mod tests {
         save_to_path(&sample(), &path).unwrap();
 
         assert!(path.exists());
-        assert!(!path.with_extension("tmp").exists(), "temp file must be renamed away");
+        assert!(
+            !path.with_extension("tmp").exists(),
+            "temp file must be renamed away"
+        );
         assert_eq!(load_from_path(&path).unwrap().tree.total_logical(), 4097);
     }
 

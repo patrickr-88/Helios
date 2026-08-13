@@ -48,12 +48,10 @@ impl ScanControl {
     }
 
     pub fn pause(&self) {
-        let _ = self.inner.state.compare_exchange(
-            RUNNING,
-            PAUSED,
-            Ordering::AcqRel,
-            Ordering::Relaxed,
-        );
+        let _ =
+            self.inner
+                .state
+                .compare_exchange(RUNNING, PAUSED, Ordering::AcqRel, Ordering::Relaxed);
     }
 
     pub fn resume(&self) {

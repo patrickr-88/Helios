@@ -10,9 +10,9 @@ use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use windows_sys::Win32::Storage::FileSystem::{
-    GetDiskFreeSpaceExW, GetDriveTypeW, GetLogicalDrives, GetVolumeInformationW,
-    FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_SYSTEM,
-    DRIVE_CDROM, DRIVE_FIXED, DRIVE_REMOTE, DRIVE_REMOVABLE,
+    GetDiskFreeSpaceExW, GetDriveTypeW, GetLogicalDrives, GetVolumeInformationW, DRIVE_CDROM,
+    DRIVE_FIXED, DRIVE_REMOTE, DRIVE_REMOVABLE, FILE_ATTRIBUTE_HIDDEN,
+    FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_SYSTEM,
 };
 
 use super::{EntryMeta, Volume};
@@ -57,7 +57,10 @@ pub fn volumes() -> Vec<Volume> {
         let wide_root = to_wide(&root);
 
         let drive_type = unsafe { GetDriveTypeW(wide_root.as_ptr()) };
-        if !matches!(drive_type, DRIVE_FIXED | DRIVE_REMOVABLE | DRIVE_REMOTE | DRIVE_CDROM) {
+        if !matches!(
+            drive_type,
+            DRIVE_FIXED | DRIVE_REMOVABLE | DRIVE_REMOTE | DRIVE_CDROM
+        ) {
             continue;
         }
 

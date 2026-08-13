@@ -131,7 +131,9 @@ pub fn is_system_path(path: &Path) -> bool {
 
 pub fn is_excluded(path: &Path) -> bool {
     let s = path.to_string_lossy();
-    default_exclusions().iter().any(|p| s == *p || s.starts_with(&format!("{p}/")))
+    default_exclusions()
+        .iter()
+        .any(|p| s == *p || s.starts_with(&format!("{p}/")))
 }
 
 #[cfg(test)]

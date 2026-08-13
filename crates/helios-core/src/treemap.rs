@@ -278,11 +278,56 @@ mod tests {
 
     fn tree() -> Tree {
         let mut t = Tree::new("/root");
-        let a = t.push_node("a", NodeId::ROOT, 1, NodeFlags::DIRECTORY, Category::Other, 0, 0, 0);
-        t.push_node("a1", a, 2, NodeFlags::empty(), Category::Videos, 300, 300, 0);
-        t.push_node("a2", a, 2, NodeFlags::empty(), Category::Images, 300, 300, 0);
-        t.push_node("b", NodeId::ROOT, 1, NodeFlags::empty(), Category::Audio, 300, 300, 0);
-        t.push_node("c", NodeId::ROOT, 1, NodeFlags::empty(), Category::Other, 100, 100, 0);
+        let a = t.push_node(
+            "a",
+            NodeId::ROOT,
+            1,
+            NodeFlags::DIRECTORY,
+            Category::Other,
+            0,
+            0,
+            0,
+        );
+        t.push_node(
+            "a1",
+            a,
+            2,
+            NodeFlags::empty(),
+            Category::Videos,
+            300,
+            300,
+            0,
+        );
+        t.push_node(
+            "a2",
+            a,
+            2,
+            NodeFlags::empty(),
+            Category::Images,
+            300,
+            300,
+            0,
+        );
+        t.push_node(
+            "b",
+            NodeId::ROOT,
+            1,
+            NodeFlags::empty(),
+            Category::Audio,
+            300,
+            300,
+            0,
+        );
+        t.push_node(
+            "c",
+            NodeId::ROOT,
+            1,
+            NodeFlags::empty(),
+            Category::Other,
+            100,
+            100,
+            0,
+        );
         t.rollup();
         t
     }
@@ -364,7 +409,13 @@ mod tests {
         assert!(layout(&t, NodeId::ROOT, Rect::new(0.0, 0.0, 1.0, 1.0), &opts).is_empty());
 
         let empty = Tree::new("/empty");
-        assert!(layout(&empty, NodeId::ROOT, Rect::new(0.0, 0.0, 500.0, 500.0), &opts).is_empty());
+        assert!(layout(
+            &empty,
+            NodeId::ROOT,
+            Rect::new(0.0, 0.0, 500.0, 500.0),
+            &opts
+        )
+        .is_empty());
     }
 
     #[test]
@@ -377,7 +428,11 @@ mod tests {
             &TreemapOptions::default(),
         );
         let child = tiles.iter().find(|t| t.depth == 1).unwrap().clone();
-        let hit = hit_test(&tiles, child.rect.x + child.rect.w / 2.0, child.rect.y + child.rect.h / 2.0);
+        let hit = hit_test(
+            &tiles,
+            child.rect.x + child.rect.w / 2.0,
+            child.rect.y + child.rect.h / 2.0,
+        );
         assert_eq!(hit.map(|t| t.depth), Some(1));
     }
 

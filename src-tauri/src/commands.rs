@@ -23,7 +23,8 @@ use helios_core::snapshot::{self, Snapshot, SnapshotMeta};
 use helios_core::treemap::{self, Rect, Tile, TreemapOptions};
 use helios_core::{fmt, platform, Volume};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+// `Manager` is what puts `AppHandle::state` in scope on the driver thread.
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::state::{AppState, LoadedScan};
 

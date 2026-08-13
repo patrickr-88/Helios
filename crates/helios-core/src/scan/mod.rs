@@ -83,7 +83,9 @@ impl ScanOptions {
         if self.use_default_exclusions && platform::is_excluded(path) {
             return true;
         }
-        self.exclusions.iter().any(|p| path == p || path.starts_with(p))
+        self.exclusions
+            .iter()
+            .any(|p| path == p || path.starts_with(p))
     }
 }
 
@@ -208,7 +210,11 @@ mod tests {
 
         let link = out.tree.find(&dir.path().join("link")).unwrap();
         assert!(out.tree.node(link).flags.contains(NodeFlags::SYMLINK));
-        assert_eq!(out.tree.children(link).count(), 0, "must not descend a link");
+        assert_eq!(
+            out.tree.children(link).count(),
+            0,
+            "must not descend a link"
+        );
         // 6000 bytes of media counted exactly once, not twice: following the
         // link would have pushed the total to ~15 KB.
         assert_eq!(out.tree.total_logical(), 9010 + symlink_bytes(&out.tree));
@@ -225,7 +231,10 @@ mod tests {
 
         let out = scan_blocking(&options(dir.path()));
         assert_eq!(out.tree.total_logical(), 16 + symlink_bytes(&out.tree));
-        assert!(out.tree.len() < 10, "the loop must not have expanded the tree");
+        assert!(
+            out.tree.len() < 10,
+            "the loop must not have expanded the tree"
+        );
     }
 
     #[test]
@@ -251,7 +260,10 @@ mod tests {
         // but it is not expanded, so its contents are not counted.
         let nested = out.tree.find(&dir.path().join("media/nested")).unwrap();
         assert_eq!(out.tree.children(nested).count(), 0);
-        assert!(out.tree.find(&dir.path().join("media/nested/photo.jpg")).is_none());
+        assert!(out
+            .tree
+            .find(&dir.path().join("media/nested/photo.jpg"))
+            .is_none());
         assert_eq!(out.tree.total_logical(), 8010 + symlink_bytes(&out.tree));
     }
 
@@ -304,11 +316,19 @@ mod tests {
     fn hardlinks_are_counted_once() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("original.bin"), vec![0u8; 2048]).unwrap();
-        fs::hard_link(dir.path().join("original.bin"), dir.path().join("clone.bin")).unwrap();
+        fs::hard_link(
+            dir.path().join("original.bin"),
+            dir.path().join("clone.bin"),
+        )
+        .unwrap();
 
         let out = scan_blocking(&options(dir.path()));
         assert_eq!(out.tree.total_logical(), 2048, "one inode, counted once");
-        assert_eq!(out.tree.node(NodeId::ROOT).file_count, 2, "both paths listed");
+        assert_eq!(
+            out.tree.node(NodeId::ROOT).file_count,
+            2,
+            "both paths listed"
+        );
 
         let mut opts = options(dir.path());
         opts.deduplicate_hardlinks = false;

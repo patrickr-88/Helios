@@ -214,7 +214,10 @@ pub fn to_pdf(report: &Report) -> Vec<u8> {
     doc.heading("Helios Storage Report");
     doc.paragraph(&format!("Location: {}", s.root_path));
     doc.paragraph(&format!("Scanned: {}", format_timestamp(s.scanned_at)));
-    doc.paragraph(&format!("Generated: {}", format_timestamp(report.generated_at)));
+    doc.paragraph(&format!(
+        "Generated: {}",
+        format_timestamp(report.generated_at)
+    ));
 
     doc.subheading("Summary");
     if let Some(volume) = &report.volume {
@@ -279,7 +282,11 @@ fn table(doc: &mut pdf::PdfBuilder, entries: &[Entry], folders: bool) {
         &[
             ("#".to_string(), 0.0, false),
             ("Name".to_string(), 22.0, false),
-            (if folders { "Files" } else { "Type" }.to_string(), 360.0, true),
+            (
+                if folders { "Files" } else { "Type" }.to_string(),
+                360.0,
+                true,
+            ),
             ("Size".to_string(), 440.0, true),
             ("Modified".to_string(), 499.0, true),
         ],
@@ -410,7 +417,10 @@ mod tests {
     #[test]
     fn csv_quotes_fields_containing_commas() {
         let csv = to_csv(&report());
-        assert!(csv.contains("\"holiday, final.mp4\""), "comma must be quoted");
+        assert!(
+            csv.contains("\"holiday, final.mp4\""),
+            "comma must be quoted"
+        );
         assert!(csv.contains("Category,Bytes,Files,Percent"));
         assert!(csv.contains("Largest folders"));
         assert_eq!(csv_field("say \"hi\""), "\"say \"\"hi\"\"\"");

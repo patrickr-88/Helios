@@ -69,7 +69,14 @@ impl PdfBuilder {
 
     pub fn paragraph(&mut self, text: &str) {
         self.ensure_space(LINE_HEIGHT);
-        self.text_at(MARGIN, self.cursor, text, BODY_SIZE, false, (0.2, 0.2, 0.24));
+        self.text_at(
+            MARGIN,
+            self.cursor,
+            text,
+            BODY_SIZE,
+            false,
+            (0.2, 0.2, 0.24),
+        );
         self.cursor -= LINE_HEIGHT;
     }
 
@@ -79,7 +86,7 @@ impl PdfBuilder {
         if shaded {
             let _ = write!(
                 self.current,
-                "0.955 0.957 0.965 rg {} {} {} {} re f\n",
+                "0.955 0.957 0.965 rg {} {} {} {} re f",
                 MARGIN - 4.0,
                 self.cursor - 3.5,
                 PAGE_WIDTH - MARGIN * 2.0 + 8.0,
@@ -122,9 +129,9 @@ impl PdfBuilder {
     }
 
     fn rule(&mut self, y: f32, thickness: f32, color: (f32, f32, f32)) {
-        let _ = write!(
+        let _ = writeln!(
             self.current,
-            "{} {} {} rg {} {} {} {} re f\n",
+            "{} {} {} rg {} {} {} {} re f",
             color.0,
             color.1,
             color.2,
@@ -137,9 +144,9 @@ impl PdfBuilder {
 
     fn text_at(&mut self, x: f32, y: f32, text: &str, size: f32, bold: bool, rgb: (f32, f32, f32)) {
         let font = if bold { "/F2" } else { "/F1" };
-        let _ = write!(
+        let _ = writeln!(
             self.current,
-            "BT {} {} {} rg {} {} Tf {:.1} {:.1} Td ({}) Tj ET\n",
+            "BT {} {} {} rg {} {} Tf {:.1} {:.1} Td ({}) Tj ET",
             rgb.0,
             rgb.1,
             rgb.2,
@@ -253,7 +260,11 @@ mod tests {
         let mut pdf = PdfBuilder::new("Helios Report");
         pdf.heading("Storage Summary");
         pdf.paragraph("Total capacity: 1.00 TB");
-        pdf.row(&[("Name".into(), 0.0, false), ("Size".into(), 400.0, true)], true, false);
+        pdf.row(
+            &[("Name".into(), 0.0, false), ("Size".into(), 400.0, true)],
+            true,
+            false,
+        );
         let bytes = pdf.finish();
 
         assert!(bytes.starts_with(b"%PDF-1.4"));
@@ -271,7 +282,10 @@ mod tests {
             pdf.paragraph(&format!("row {i}"));
         }
         let text = String::from_utf8_lossy(&pdf.finish()).into_owned();
-        assert!(text.matches("/Type /Page ").count() > 1, "should have spilled pages");
+        assert!(
+            text.matches("/Type /Page ").count() > 1,
+            "should have spilled pages"
+        );
     }
 
     #[test]

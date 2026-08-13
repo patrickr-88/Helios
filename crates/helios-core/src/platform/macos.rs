@@ -67,8 +67,7 @@ extern "C" {
     // targets, so we bind it directly. x86_64 still needs the `$INODE64`
     // variant to get 64-bit inode fields; arm64 has only the modern ABI.
     #[cfg_attr(target_arch = "x86_64", link_name = "getfsstat$INODE64")]
-    fn getfsstat(buf: *mut libc::statfs, bufsize: libc::c_int, flags: libc::c_int)
-        -> libc::c_int;
+    fn getfsstat(buf: *mut libc::statfs, bufsize: libc::c_int, flags: libc::c_int) -> libc::c_int;
 }
 
 fn cstr_to_string(buf: &[libc::c_char]) -> String {
@@ -165,12 +164,16 @@ pub fn meta_from_dir_entry(entry: &fs::DirEntry) -> std::io::Result<EntryMeta> {
 
 pub fn is_package(name: &str, is_dir: bool) -> bool {
     is_dir
-        && name
-            .rsplit_once('.')
-            .is_some_and(|(_, ext)| PACKAGE_EXTENSIONS.iter().any(|p| p.eq_ignore_ascii_case(ext)))
+        && name.rsplit_once('.').is_some_and(|(_, ext)| {
+            PACKAGE_EXTENSIONS
+                .iter()
+                .any(|p| p.eq_ignore_ascii_case(ext))
+        })
 }
 
 pub fn app_data_dir() -> PathBuf {
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/tmp"));
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/tmp"));
     home.join("Library/Application Support/Helios")
 }

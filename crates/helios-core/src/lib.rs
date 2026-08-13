@@ -162,7 +162,9 @@ pub mod treemap;
 pub use category::Category;
 pub use model::{Node, NodeFlags, NodeId, Tree};
 pub use platform::Volume;
-pub use scan::{scan, scan_blocking, ScanControl, ScanOptions, ScanOutcome, ScanProgress, ScanState};
+pub use scan::{
+    scan, scan_blocking, ScanControl, ScanOptions, ScanOutcome, ScanProgress, ScanState,
+};
 pub use snapshot::{Snapshot, SnapshotMeta};
 
 /// Semantic version of the engine, surfaced in the About panel and in exports.

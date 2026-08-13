@@ -49,7 +49,10 @@ impl DirIndex {
     pub fn build(tree: &Tree) -> Self {
         let mut map = HashMap::with_capacity(tree.len() / 8);
         let mut stack = vec![(NodeId::ROOT, root_hash(&tree.root_path))];
-        map.insert(root_hash(&tree.root_path), (tree.node(NodeId::ROOT).mtime, NodeId::ROOT));
+        map.insert(
+            root_hash(&tree.root_path),
+            (tree.node(NodeId::ROOT).mtime, NodeId::ROOT),
+        );
 
         while let Some((id, hash)) = stack.pop() {
             for child in tree.children(id) {
@@ -151,10 +154,37 @@ mod tests {
 
     fn sample_tree() -> Tree {
         let mut t = Tree::new("/root");
-        let a = t.push_node("a", NodeId::ROOT, 1, NodeFlags::DIRECTORY, Category::Other, 0, 0, 100);
+        let a = t.push_node(
+            "a",
+            NodeId::ROOT,
+            1,
+            NodeFlags::DIRECTORY,
+            Category::Other,
+            0,
+            0,
+            100,
+        );
         let b = t.push_node("b", a, 2, NodeFlags::DIRECTORY, Category::Other, 0, 0, 200);
-        t.push_node("f.bin", b, 3, NodeFlags::empty(), Category::Other, 64, 64, 0);
-        t.push_node("g.bin", a, 2, NodeFlags::empty(), Category::Other, 32, 32, 0);
+        t.push_node(
+            "f.bin",
+            b,
+            3,
+            NodeFlags::empty(),
+            Category::Other,
+            64,
+            64,
+            0,
+        );
+        t.push_node(
+            "g.bin",
+            a,
+            2,
+            NodeFlags::empty(),
+            Category::Other,
+            32,
+            32,
+            0,
+        );
         t.rollup();
         t
     }
@@ -166,7 +196,10 @@ mod tests {
         let a_hash = hash_child(root_hash(&tree.root_path), "a");
 
         assert!(index.reusable(a_hash, 100).is_some());
-        assert!(index.reusable(a_hash, 101).is_none(), "changed mtime must miss");
+        assert!(
+            index.reusable(a_hash, 101).is_none(),
+            "changed mtime must miss"
+        );
         assert!(index.reusable(hash_child(a_hash, "ghost"), 100).is_none());
     }
 

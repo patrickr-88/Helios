@@ -18,14 +18,21 @@ fn fingerprint(root: &Path) -> BTreeMap<PathBuf, (u64, i64, u32)> {
     let mut out = BTreeMap::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&dir) else { continue };
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
-            let Ok(meta) = fs::symlink_metadata(&path) else { continue };
+            let Ok(meta) = fs::symlink_metadata(&path) else {
+                continue;
+            };
             #[cfg(unix)]
             let (mtime, mode) = {
                 use std::os::unix::fs::MetadataExt;
-                (meta.mtime() * 1_000_000_000 + meta.mtime_nsec(), meta.mode())
+                (
+                    meta.mtime() * 1_000_000_000 + meta.mtime_nsec(),
+                    meta.mode(),
+                )
             };
             #[cfg(not(unix))]
             let (mtime, mode) = (0i64, 0u32);
@@ -55,7 +62,10 @@ fn a_scan_leaves_the_tree_untouched() {
     let mut options = ScanOptions::new(dir.path());
     options.use_default_exclusions = false;
     let outcome = scan_blocking(&options);
-    assert!(outcome.tree.total_logical() >= 5125, "sanity: the scan saw the files");
+    assert!(
+        outcome.tree.total_logical() >= 5125,
+        "sanity: the scan saw the files"
+    );
 
     let after = fingerprint(dir.path());
     assert_eq!(
@@ -76,7 +86,11 @@ fn scanning_creates_no_files_anywhere_in_the_tree() {
         .keys()
         .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
         .collect();
-    assert_eq!(names.len(), 6, "expected exactly the fixture's 6 paths, got {names:?}");
+    assert_eq!(
+        names.len(),
+        6,
+        "expected exactly the fixture's 6 paths, got {names:?}"
+    );
 }
 
 /// Mutating `std::fs` calls that must not appear in the engine.
@@ -148,7 +162,10 @@ fn the_engine_contains_no_mutating_filesystem_calls() {
         }
     }
 
-    assert!(files_checked > 5, "the audit found almost no sources to check");
+    assert!(
+        files_checked > 5,
+        "the audit found almost no sources to check"
+    );
     assert!(
         findings.is_empty(),
         "mutating filesystem calls found in the engine:\n  {}",
@@ -167,7 +184,14 @@ fn in_test_module(source: &str, line_no: usize) -> bool {
 #[test]
 fn the_engine_contains_no_networking() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let forbidden = ["TcpStream", "UdpSocket", "TcpListener", "reqwest", "hyper::", "ureq"];
+    let forbidden = [
+        "TcpStream",
+        "UdpSocket",
+        "TcpListener",
+        "reqwest",
+        "hyper::",
+        "ureq",
+    ];
     let mut stack = vec![src];
     while let Some(dir) = stack.pop() {
         for entry in fs::read_dir(&dir).unwrap().flatten() {

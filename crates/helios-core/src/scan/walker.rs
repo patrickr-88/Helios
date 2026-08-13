@@ -83,12 +83,20 @@ pub fn scan(
         tree.node_mut(NodeId::ROOT).mtime = meta.mtime;
     }
     if root_meta.is_err() {
-        tree.node_mut(NodeId::ROOT).flags.insert(NodeFlags::INACCESSIBLE);
+        tree.node_mut(NodeId::ROOT)
+            .flags
+            .insert(NodeFlags::INACCESSIBLE);
         tree.errors.push(ScanError {
             path: options.root.clone(),
             message: "root is not readable".into(),
         });
-        return finish(tree, ScanStats::default(), ScanState::Done, started, control);
+        return finish(
+            tree,
+            ScanStats::default(),
+            ScanState::Done,
+            started,
+            control,
+        );
     }
     let root_device = root_meta.ok().and_then(|m| m.file_id).map(|(dev, _)| dev);
 
@@ -144,7 +152,9 @@ pub fn scan(
         stats.dirs_scanned += 1;
 
         if let Some(message) = batch.error {
-            tree.node_mut(batch.job.node).flags.insert(NodeFlags::INACCESSIBLE);
+            tree.node_mut(batch.job.node)
+                .flags
+                .insert(NodeFlags::INACCESSIBLE);
             stats.errors += 1;
             if tree.errors.len() < options.max_recorded_errors {
                 tree.errors.push(ScanError {
