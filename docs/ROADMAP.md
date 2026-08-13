@@ -4,7 +4,7 @@
 
 Phases 1–4 are built and tested. The engine, the six views, search and
 filtering, all three export formats, the snapshot cache and incremental rescans
-are working, with 67 tests passing and totals verified byte-for-byte against
+are working, with 75 tests passing and totals verified byte-for-byte against
 `du`. What remains before a 1.0 is mostly *proof on real hardware*: the macOS
 backend has never been compiled on a Mac, and the Windows backend has never been
 compiled at all.
@@ -45,6 +45,7 @@ done and verified; everything platform-specific is written and unverified.
 - [x] Native appearance, light and dark, responsive
 - [x] Snapshot cache with incremental rescans
 - [x] No network code, no telemetry — enforced by tests
+- [x] Runs portably from external media, writing nothing to the host
 - [ ] Signed, notarized `.dmg`
 - [ ] Full Disk Access onboarding flow
 - [x] App icon

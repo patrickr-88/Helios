@@ -28,6 +28,7 @@ USAGE:
     helios scan <path> [options]
     helios report <path> --format <csv|json|pdf> [--out <file>] [options]
     helios snapshots
+    helios paths
 
 OPTIONS:
     --top <n>          Entries in each top-N list          [default: 20]
@@ -40,6 +41,11 @@ OPTIONS:
     --no-progress      Suppress the progress line
     --cache            Reuse and update the snapshot cache for incremental rescans
     -h, --help         Show this help
+
+ENVIRONMENT:
+    HELIOS_DATA_DIR    Where to keep the snapshot cache. Set this, or drop a
+                       'helios-portable' file beside the binary, to run entirely
+                       from a flash drive without writing to the host machine.
 
 Helios never modifies the filesystem it scans.
 ";
@@ -54,6 +60,7 @@ fn main() -> ExitCode {
     let result = match args[0].as_str() {
         "volumes" => cmd_volumes(),
         "snapshots" => cmd_snapshots(),
+        "paths" => cmd_paths(),
         "scan" => cmd_scan(&args[1..], false),
         "report" => cmd_scan(&args[1..], true),
         other => Err(format!("unknown command '{other}'\n\n{USAGE}")),
@@ -194,6 +201,49 @@ fn cmd_snapshots() -> Result<(), String> {
     Ok(())
 }
 
+/// Where Helios is reading and writing its own data, and whether it is running
+/// portably. Worth its own command: "is this actually leaving nothing on the
+/// host?" is the first question anyone running from a flash drive asks.
+fn cmd_paths() -> Result<(), String> {
+    let cache = snapshot::cache_dir();
+    println!(
+        "mode          {}",
+        if platform::is_portable() {
+            "portable — data stays with the app"
+        } else {
+            "standard — data in the user's application-support directory"
+        }
+    );
+    if let Some(dir) = platform::app_directory() {
+        println!("app directory {}", dir.display());
+    }
+    if std::env::var_os("HELIOS_DATA_DIR").is_some() {
+        println!("override      HELIOS_DATA_DIR is set and wins over everything below");
+    }
+    println!("data          {}", platform::data_dir().display());
+    println!("snapshots     {}", cache.display());
+    println!("host id       {}", snapshot::host_id());
+
+    // Portable drives are routinely read-only or full; say so now rather than
+    // at the end of a long scan.
+    let writable = std::fs::create_dir_all(&cache)
+        .and_then(|_| {
+            let probe = cache.join(".helios-write-probe");
+            std::fs::write(&probe, b"")?;
+            std::fs::remove_file(&probe)
+        })
+        .is_ok();
+    println!(
+        "writable      {}",
+        if writable {
+            "yes"
+        } else {
+            "no — scans will work, but nothing will be cached"
+        }
+    );
+    Ok(())
+}
+
 fn cmd_scan(argv: &[String], as_report: bool) -> Result<(), String> {
     let args = parse_args(argv)?;
     let path = args.path.clone().ok_or("a path to scan is required")?;
@@ -217,7 +267,9 @@ fn cmd_scan(argv: &[String], as_report: bool) -> Result<(), String> {
     }
     if args.cache {
         if let Some(v) = &volume {
-            if let Ok(previous) = snapshot::load(&v.id) {
+            // load_for_volume, not load: a cache carried on a flash drive may
+            // hold another machine's scan under the same volume id.
+            if let Ok(previous) = snapshot::load_for_volume(v) {
                 if previous.tree.root_path == path {
                     options.previous = Some(Arc::new(previous.tree));
                 }
@@ -259,12 +311,7 @@ fn cmd_scan(argv: &[String], as_report: bool) -> Result<(), String> {
         eprintln!("scan cancelled — showing partial results");
     }
 
-    let meta = SnapshotMeta {
-        volume_id: volume.as_ref().map(|v| v.id.clone()).unwrap_or_default(),
-        root_path: path.clone(),
-        scanned_at: snapshot::now_unix(),
-        stats: outcome.stats.clone(),
-    };
+    let meta = SnapshotMeta::new(volume.as_ref(), path.clone(), outcome.stats.clone());
 
     if args.cache && !meta.volume_id.is_empty() {
         let snap = Snapshot {

@@ -250,7 +250,7 @@ a handful of components, and the production bundle is 186 KB (60 KB gzipped).
 
 ## Testing
 
-67 tests, all runnable on any platform:
+75 tests, all runnable on any platform:
 
 - **Correctness under nasty inputs** — symlink loops, hardlinks, permission
   denials, deep nesting, non-ASCII names, zero-byte and truncated snapshots.

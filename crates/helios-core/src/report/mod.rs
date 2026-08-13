@@ -372,15 +372,16 @@ mod tests {
         );
         tree.rollup();
 
-        let meta = SnapshotMeta {
-            volume_id: "/dev/disk1s1".into(),
-            root_path: "/Volumes/Test".into(),
-            scanned_at: 1_700_000_500,
-            stats: ScanStats {
+        let mut meta = SnapshotMeta::new(
+            None,
+            "/Volumes/Test".into(),
+            ScanStats {
                 elapsed_ms: 4_200,
                 ..ScanStats::default()
             },
-        };
+        );
+        meta.volume_id = "/dev/disk1s1".into();
+        meta.scanned_at = 1_700_000_500;
         let volume = Volume {
             id: "/dev/disk1s1".into(),
             name: "Test".into(),

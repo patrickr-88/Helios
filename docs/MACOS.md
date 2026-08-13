@@ -6,7 +6,7 @@ network access to run.
 
 > **Status, stated up front.** The macOS backend is written but has never been
 > compiled on a Mac — this project was developed on Linux. The portable engine
-> (67 tests, verified byte-for-byte against `du`) works; the macOS-specific
+> (75 tests, verified byte-for-byte against `du`) works; the macOS-specific
 > module in `crates/helios-core/src/platform/macos.rs` is unproven. If the build
 > fails, [If it doesn't compile](#if-it-doesnt-compile) lists the four places
 > that are most likely at fault and what to check in each.
@@ -230,6 +230,20 @@ match it byte for byte — that is the cross-check in the README.)
   siblings when scanning `/`, because those mounts re-expose storage already
   counted through `/`. Counting both would roughly double every total.
 
+## Running from a flash drive
+
+Helios can run from a USB stick and keep every scan on the stick, writing
+nothing to the Mac it is plugged into:
+
+```sh
+./scripts/make-portable-drive.sh /Volumes/HELIOS
+```
+
+Full Disk Access still has to be granted on each Mac, since macOS ties that
+permission to an app at a path on a machine. [PORTABLE.md](PORTABLE.md) covers
+the rest — drive formats, Gatekeeper, carrying one drive between machines, and
+what the drive ends up holding.
+
 ## Where Helios keeps its data
 
 One directory, containing only scan metadata — names, sizes and dates. Never
@@ -238,6 +252,8 @@ file contents, and never anything that leaves your Mac:
 ```
 ~/Library/Application Support/Helios/snapshots/
 ```
+
+(Or `HeliosData/snapshots/` on the drive, when running portably.)
 
 To remove everything Helios has ever stored:
 

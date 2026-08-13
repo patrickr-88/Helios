@@ -145,10 +145,12 @@ pub fn start_scan(app: AppHandle, state: State<'_, AppState>, request: ScanReque
         // Prefer the in-memory tree; fall back to the on-disk snapshot.
         if let Some(previous) = state.get(&scan_id) {
             options.previous = Some(previous.tree.clone());
-        } else if let Ok(cached) = snapshot::load(&scan_id) {
-            if cached.tree.root_path == path {
-                options.previous = Some(Arc::new(cached.tree));
-            }
+        } else if let Some(cached) = volume
+            .as_ref()
+            .and_then(|v| snapshot::load_for_volume(v).ok())
+            .filter(|cached| cached.tree.root_path == path)
+        {
+            options.previous = Some(Arc::new(cached.tree));
         }
     }
 
@@ -167,12 +169,13 @@ pub fn start_scan(app: AppHandle, state: State<'_, AppState>, request: ScanReque
                 let _ = emitter.emit(EVENT_PROGRESS, progress);
             });
 
-            let meta = SnapshotMeta {
-                volume_id: id.clone(),
-                root_path: options.root.clone(),
-                scanned_at: snapshot::now_unix(),
-                stats: outcome.stats.clone(),
-            };
+            let mut meta = SnapshotMeta::new(
+                volume_for(&options.root).as_ref(),
+                options.root.clone(),
+                outcome.stats.clone(),
+            );
+            // Folder scans key on the path, so keep the id the UI was given.
+            meta.volume_id = id.clone();
             let state: State<'_, AppState> = handle.state();
             let tree = Arc::new(outcome.tree);
             let loaded = LoadedScan {
@@ -491,13 +494,23 @@ pub fn export_report(state: State<'_, AppState>, request: ExportRequest) -> Resu
 
 #[tauri::command]
 pub fn list_snapshots() -> Vec<SnapshotMeta> {
-    snapshot::list()
+    // Only this machine's scans: a portable cache may also hold other
+    // machines', which would be confusing rather than useful here.
+    snapshot::list_for_this_host()
 }
 
 /// Loads a cached scan so the app has something to show immediately at launch.
 #[tauri::command]
 pub fn load_snapshot(state: State<'_, AppState>, volume_id: String) -> Result<ScanSummary> {
-    let snapshot = snapshot::load(&volume_id).map_err(|e| format!("No usable snapshot: {e}"))?;
+    // Prefer the volume-verified load so a portable cache cannot show one
+    // machine's scan on another; fall back to the plain load for folder scans,
+    // whose id is a path and therefore already machine-specific.
+    let snapshot = platform::volumes()
+        .iter()
+        .find(|v| v.id == volume_id)
+        .map(snapshot::load_for_volume)
+        .unwrap_or_else(|| snapshot::load(&volume_id))
+        .map_err(|e| format!("No usable snapshot: {e}"))?;
     let stats = snapshot.meta.stats.clone();
     let loaded = LoadedScan {
         meta: snapshot.meta,
@@ -558,6 +571,7 @@ pub fn app_info() -> serde_json::Value {
         "engineVersion": helios_core::VERSION,
         "cacheDirectory": snapshot::cache_dir().to_string_lossy(),
         "defaultThreads": scan::default_threads(),
+        "portable": platform::is_portable(),
         "offline": true,
         "readOnly": true,
     })

@@ -119,9 +119,103 @@ pub fn default_exclusions() -> &'static [&'static str] {
     imp::DEFAULT_EXCLUSIONS
 }
 
-/// Per-user application support directory for the snapshot cache.
+/// Per-user application support directory, as the OS defines it.
 pub fn app_data_dir() -> PathBuf {
     imp::app_data_dir()
+}
+
+/// Name of the folder Helios keeps its data in when running portably.
+pub const PORTABLE_DIR: &str = "HeliosData";
+
+/// Marker file that switches Helios into portable mode.
+pub const PORTABLE_MARKER: &str = "helios-portable";
+
+/// Where Helios stores *its own* data — the snapshot cache.
+///
+/// Three sources, in order:
+///
+/// 1. `HELIOS_DATA_DIR`, for scripted and one-off use.
+/// 2. Portable mode: a `helios-portable` marker file, or an existing
+///    `HeliosData` folder, sitting beside the app. Data then lives on the same
+///    device the app was launched from — the point being that running Helios
+///    from a flash drive leaves nothing behind on the host.
+/// 3. The platform's application-support directory.
+///
+/// Note this only ever affects where Helios writes; it never affects what it
+/// reads or scans.
+pub fn data_dir() -> PathBuf {
+    resolve_data_dir(
+        std::env::var_os("HELIOS_DATA_DIR").map(PathBuf::from),
+        app_directory(),
+        imp::app_data_dir(),
+    )
+}
+
+/// True when Helios is storing its data next to the executable.
+pub fn is_portable() -> bool {
+    portable_root().is_some()
+}
+
+/// The portable data directory, if portable mode is active by marker or by an
+/// existing data folder. An explicit `HELIOS_DATA_DIR` is *not* portable mode:
+/// it is a redirect, and the caller asked for it by name.
+pub fn portable_root() -> Option<PathBuf> {
+    let app_dir = app_directory()?;
+    portable_dir_for(&app_dir)
+}
+
+fn portable_dir_for(app_dir: &Path) -> Option<PathBuf> {
+    let data = app_dir.join(PORTABLE_DIR);
+    // Either trigger is enough: the marker is how a user opts in, and the
+    // existing folder is how the drive keeps working after the first run even
+    // if the marker is deleted.
+    let opted_in = app_dir.join(PORTABLE_MARKER).exists()
+        || app_dir.join(format!("{PORTABLE_MARKER}.txt")).exists()
+        || data.is_dir();
+    opted_in.then_some(data)
+}
+
+pub(crate) fn resolve_data_dir(
+    env_override: Option<PathBuf>,
+    app_dir: Option<PathBuf>,
+    default: PathBuf,
+) -> PathBuf {
+    if let Some(dir) = env_override.filter(|d| !d.as_os_str().is_empty()) {
+        return dir;
+    }
+    app_dir
+        .as_deref()
+        .and_then(portable_dir_for)
+        .unwrap_or(default)
+}
+
+/// The directory the app was launched from.
+///
+/// On macOS the executable lives inside `Helios.app/Contents/MacOS/`, and
+/// writing anything inside a bundle breaks its code signature — so this returns
+/// the directory *containing* the bundle, which on a flash drive is the drive's
+/// root.
+pub fn app_directory() -> Option<PathBuf> {
+    std::env::current_exe().ok().map(|exe| {
+        // Resolve symlinks first, so a `helios` symlinked onto the PATH still
+        // reports the drive it actually lives on.
+        let exe = exe.canonicalize().unwrap_or(exe);
+        bundle_aware_parent(&exe)
+    })
+}
+
+fn bundle_aware_parent(exe: &Path) -> PathBuf {
+    for ancestor in exe.ancestors() {
+        let is_bundle = ancestor
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("app"));
+        if is_bundle {
+            if let Some(parent) = ancestor.parent() {
+                return parent.to_path_buf();
+            }
+        }
+    }
+    exe.parent().unwrap_or(exe).to_path_buf()
 }
 
 pub fn is_system_path(path: &Path) -> bool {
@@ -158,5 +252,74 @@ mod tests {
         // A directory that merely starts with an excluded prefix's characters
         // must not be swallowed.
         assert!(!is_excluded(Path::new("/devious")));
+    }
+
+    #[test]
+    fn data_dir_prefers_an_explicit_override() {
+        let chosen = resolve_data_dir(
+            Some(PathBuf::from("/somewhere/else")),
+            Some(PathBuf::from("/Volumes/HELIOS")),
+            PathBuf::from("/home/me/.local/share/helios"),
+        );
+        assert_eq!(chosen, Path::new("/somewhere/else"));
+
+        // An empty variable is treated as unset rather than as the root.
+        let chosen = resolve_data_dir(
+            Some(PathBuf::new()),
+            None,
+            PathBuf::from("/home/me/.local/share/helios"),
+        );
+        assert_eq!(chosen, Path::new("/home/me/.local/share/helios"));
+    }
+
+    #[test]
+    fn a_marker_beside_the_app_switches_to_portable_mode() {
+        let drive = tempfile::tempdir().unwrap();
+        let default = PathBuf::from("/home/me/.local/share/helios");
+
+        // No marker: the OS location wins.
+        assert_eq!(
+            resolve_data_dir(None, Some(drive.path().to_path_buf()), default.clone()),
+            default
+        );
+
+        std::fs::write(drive.path().join(PORTABLE_MARKER), b"").unwrap();
+        assert_eq!(
+            resolve_data_dir(None, Some(drive.path().to_path_buf()), default.clone()),
+            drive.path().join(PORTABLE_DIR)
+        );
+    }
+
+    #[test]
+    fn an_existing_data_folder_keeps_the_drive_portable() {
+        // Someone deletes the marker but keeps the data: the drive must not
+        // silently start writing to the host machine instead.
+        let drive = tempfile::tempdir().unwrap();
+        std::fs::create_dir(drive.path().join(PORTABLE_DIR)).unwrap();
+
+        assert_eq!(
+            resolve_data_dir(
+                None,
+                Some(drive.path().to_path_buf()),
+                PathBuf::from("/home/me/.local/share/helios")
+            ),
+            drive.path().join(PORTABLE_DIR)
+        );
+    }
+
+    #[test]
+    fn portable_data_lands_beside_a_mac_bundle_never_inside_it() {
+        // Writing inside Helios.app would invalidate its code signature.
+        assert_eq!(
+            bundle_aware_parent(Path::new(
+                "/Volumes/HELIOS/Helios.app/Contents/MacOS/Helios"
+            )),
+            Path::new("/Volumes/HELIOS")
+        );
+        // A bare executable just uses its own directory.
+        assert_eq!(
+            bundle_aware_parent(Path::new("/Volumes/HELIOS/helios")),
+            Path::new("/Volumes/HELIOS")
+        );
     }
 }

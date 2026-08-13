@@ -44,7 +44,7 @@ app's Tauri capability file grants no filesystem, shell, or HTTP plugin at all.
 The engine and CLI build anywhere Rust does:
 
 ```sh
-cargo test                              # 67 tests, no platform assumptions
+cargo test                              # 75 tests, no platform assumptions
 cargo build --release -p helios-cli
 
 ./target/release/helios volumes         # every mounted volume
@@ -66,6 +66,14 @@ The real app (macOS):
 ```sh
 npm run app            # development, with devtools
 npm run app:build      # .app and .dmg in src-tauri/target/release/bundle
+```
+
+It also runs entirely from a flash drive, scanning the machine it is plugged
+into and writing nothing to it — see [docs/PORTABLE.md](docs/PORTABLE.md):
+
+```sh
+./scripts/make-portable-drive.sh /Volumes/HELIOS
+/Volumes/HELIOS/helios paths      # confirms "portable — data stays with the app"
 ```
 
 **[docs/MACOS.md](docs/MACOS.md) is the full Mac guide** — prerequisites, the
@@ -109,6 +117,7 @@ module rather than rewriting an app — see [docs/PLATFORM.md](docs/PLATFORM.md)
 | Document | What's in it |
 |---|---|
 | [MACOS.md](docs/MACOS.md) | Running, building and troubleshooting on a Mac |
+| [PORTABLE.md](docs/PORTABLE.md) | Running from a flash drive without touching the host |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design, data flow, storage design, folder layout |
 | [TECHNOLOGY-CHOICE.md](docs/TECHNOLOGY-CHOICE.md) | Electron vs. Tauri vs. SwiftUI, with the reasoning |
 | [SCAN-ENGINE.md](docs/SCAN-ENGINE.md) | The walker, threading model, correctness decisions |

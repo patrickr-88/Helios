@@ -51,6 +51,15 @@ no hashes of your filenames sent anywhere. Scan results live in memory and in a
 local cache you can delete at any time (`Forget scan` in the UI, or
 `rm -rf ~/Library/Application\ Support/Helios`).
 
+Running from a flash drive moves even that cache off the host: see
+[PORTABLE.md](PORTABLE.md). Two things worth knowing before you carry one
+around. The drive then holds file and folder *names*, sizes and dates for every
+machine scanned — never file contents, but a directory listing is not nothing,
+so encrypt the drive if it will leave your control. And portable mode is about
+Helios not storing your data on someone else's machine; the OS still records
+that an app was launched, so it is not an anti-forensics tool and should not be
+described as one.
+
 ### 4. It asks for no privilege it does not need
 
 No `sudo`, no elevation prompt, no privileged helper tool, no kernel extension,

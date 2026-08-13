@@ -26,10 +26,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::category::Category;
 use crate::model::{Node, NodeFlags, NodeId, ScanError, Tree};
+use crate::platform::Volume;
 use crate::scan::ScanStats;
 
 const MAGIC: &[u8; 8] = b"HELIOSNP";
-const FORMAT_VERSION: u32 = 1;
+const FORMAT_VERSION: u32 = 2;
 /// Refuse absurd headers rather than trying to allocate from them — a
 /// corrupted length field must not become a multi-gigabyte allocation.
 const MAX_NODES: u64 = 500_000_000;
@@ -44,6 +45,77 @@ pub struct SnapshotMeta {
     /// Unix seconds.
     pub scanned_at: i64,
     pub stats: ScanStats,
+    /// Which machine produced this snapshot; see [`host_id`].
+    pub host_id: String,
+    /// Enough of the volume to recognise it again. Volume ids are only unique
+    /// on the machine that issued them — `/dev/disk3s1s1` names a different
+    /// disk on every Mac — so a cache carried between machines on a flash
+    /// drive has to prove the snapshot describes the volume in front of it.
+    pub volume_name: String,
+    pub volume_filesystem: String,
+    pub volume_capacity: u64,
+}
+
+impl SnapshotMeta {
+    /// Builds metadata for a freshly completed scan.
+    pub fn new(volume: Option<&Volume>, root_path: PathBuf, stats: ScanStats) -> SnapshotMeta {
+        SnapshotMeta {
+            volume_id: volume
+                .map(|v| v.id.clone())
+                .unwrap_or_else(|| root_path.to_string_lossy().into_owned()),
+            root_path,
+            scanned_at: now_unix(),
+            stats,
+            host_id: host_id(),
+            volume_name: volume.map(|v| v.name.clone()).unwrap_or_default(),
+            volume_filesystem: volume.map(|v| v.filesystem.clone()).unwrap_or_default(),
+            volume_capacity: volume.map(|v| v.total_bytes).unwrap_or_default(),
+        }
+    }
+
+    /// True when this snapshot plausibly describes `volume` on this machine.
+    ///
+    /// Deliberately strict: the failure mode it prevents is showing someone
+    /// last week's scan of a *different* computer's disk, which looks entirely
+    /// convincing and is entirely wrong.
+    pub fn matches_volume(&self, volume: &Volume) -> bool {
+        self.host_id == host_id()
+            && self.volume_id == volume.id
+            && self.volume_name == volume.name
+            && self.volume_filesystem == volume.filesystem
+            && self.volume_capacity == volume.total_bytes
+    }
+}
+
+/// A short, stable-per-machine identifier.
+///
+/// Derived from things already at hand — the user's home directory and account
+/// name, plus the startup volume's name, filesystem and capacity — because the
+/// alternative is either a new platform syscall or writing an id file onto the
+/// host, and writing to the host is precisely what portable mode exists to
+/// avoid. It is not a security boundary and does not need to be unforgeable: a
+/// collision costs a rescan, never a wrong answer, because
+/// [`SnapshotMeta::matches_volume`] still has to agree.
+pub fn host_id() -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut feed = |bytes: &[u8]| {
+        for b in bytes {
+            hash ^= u64::from(*b);
+            hash = hash.wrapping_mul(0x100_0000_01b3);
+        }
+    };
+
+    for var in ["HOME", "USERPROFILE", "USER", "USERNAME", "LOGNAME"] {
+        if let Some(value) = std::env::var_os(var) {
+            feed(value.to_string_lossy().as_bytes());
+        }
+    }
+    if let Some(root) = crate::platform::volumes().into_iter().find(|v| v.is_root) {
+        feed(root.name.as_bytes());
+        feed(root.filesystem.as_bytes());
+        feed(&root.total_bytes.to_le_bytes());
+    }
+    format!("{hash:016x}")
 }
 
 #[derive(Debug)]
@@ -52,20 +124,36 @@ pub struct Snapshot {
     pub tree: Tree,
 }
 
-/// Directory holding cached snapshots.
+/// Directory holding cached snapshots — on the flash drive when Helios is
+/// running portably, otherwise under the user's application-support directory.
 pub fn cache_dir() -> PathBuf {
-    crate::platform::app_data_dir().join("snapshots")
+    crate::platform::data_dir().join("snapshots")
 }
 
-/// Path for a volume's snapshot. The id is sanitized because it comes from the
-/// OS (`/dev/disk3s1s1`, `\\?\Volume{…}`) and must not escape the cache
-/// directory.
+/// Path for a volume's snapshot on this machine.
 pub fn snapshot_path(volume_id: &str) -> PathBuf {
-    let safe: String = volume_id
+    snapshot_path_for(&host_id(), volume_id)
+}
+
+/// Path for one machine's snapshot of one volume.
+///
+/// The host id is part of the filename so that a portable cache carried between
+/// machines keeps their scans apart rather than overwriting one with the other.
+/// Both components are sanitized because they come from the OS
+/// (`/dev/disk3s1s1`, `\\?\Volume{…}`) and must not escape the cache directory.
+pub fn snapshot_path_for(host_id: &str, volume_id: &str) -> PathBuf {
+    cache_dir().join(format!(
+        "{}-{}.helios",
+        sanitize(host_id),
+        sanitize(volume_id)
+    ))
+}
+
+fn sanitize(value: &str) -> String {
+    value
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-        .collect();
-    cache_dir().join(format!("{safe}.helios"))
+        .collect()
 }
 
 struct Writer<W: Write> {
@@ -148,6 +236,10 @@ pub fn write_to(out: impl Write, snapshot: &Snapshot) -> io::Result<()> {
     w.str(&snapshot.meta.volume_id)?;
     w.str(&snapshot.meta.root_path.to_string_lossy())?;
     w.i64(snapshot.meta.scanned_at)?;
+    w.str(&snapshot.meta.host_id)?;
+    w.str(&snapshot.meta.volume_name)?;
+    w.str(&snapshot.meta.volume_filesystem)?;
+    w.u64(snapshot.meta.volume_capacity)?;
 
     let stats = &snapshot.meta.stats;
     for value in [
@@ -211,6 +303,10 @@ pub fn read_from(buf: &[u8]) -> io::Result<Snapshot> {
     let volume_id = r.string()?;
     let root_path = PathBuf::from(r.string()?);
     let scanned_at = r.i64()?;
+    let host_id = r.string()?;
+    let volume_name = r.string()?;
+    let volume_filesystem = r.string()?;
+    let volume_capacity = r.u64()?;
     // Field order here must match the write side exactly.
     let stats = ScanStats {
         files_scanned: r.u64()?,
@@ -278,6 +374,10 @@ pub fn read_from(buf: &[u8]) -> io::Result<Snapshot> {
             root_path,
             scanned_at,
             stats,
+            host_id,
+            volume_name,
+            volume_filesystem,
+            volume_capacity,
         },
         tree,
     })
@@ -316,6 +416,24 @@ pub fn load(volume_id: &str) -> io::Result<Snapshot> {
     load_from_path(&snapshot_path(volume_id))
 }
 
+/// Loads the cached scan of `volume`, but only if the snapshot actually
+/// describes it.
+///
+/// This is the load every caller should use. A cache living on a flash drive
+/// travels between machines, where volume ids repeat and mean different things;
+/// a mismatch here is not an error worth surfacing, it simply means "no cache",
+/// and the volume gets rescanned.
+pub fn load_for_volume(volume: &Volume) -> io::Result<Snapshot> {
+    let snapshot = load(&volume.id)?;
+    if !snapshot.meta.matches_volume(volume) {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "cached snapshot describes a different volume",
+        ));
+    }
+    Ok(snapshot)
+}
+
 pub fn load_from_path(path: &Path) -> io::Result<Snapshot> {
     let mut buf = Vec::new();
     fs::File::open(path)?.read_to_end(&mut buf)?;
@@ -338,6 +456,12 @@ pub fn list() -> Vec<SnapshotMeta> {
 
 pub fn delete(volume_id: &str) -> io::Result<()> {
     fs::remove_file(snapshot_path(volume_id))
+}
+
+/// Every cached snapshot produced by this machine, newest first.
+pub fn list_for_this_host() -> Vec<SnapshotMeta> {
+    let here = host_id();
+    list().into_iter().filter(|m| m.host_id == here).collect()
 }
 
 pub fn now_unix() -> i64 {
@@ -399,8 +523,28 @@ mod tests {
                     files_scanned: 2,
                     ..ScanStats::default()
                 },
+                host_id: "0123456789abcdef".into(),
+                volume_name: "Sample".into(),
+                volume_filesystem: "apfs".into(),
+                volume_capacity: 512_000_000_000,
             },
             tree,
+        }
+    }
+
+    fn sample_volume() -> Volume {
+        Volume {
+            id: "/dev/disk3s1".into(),
+            name: "Sample".into(),
+            mount_point: "/Volumes/Sample".into(),
+            filesystem: "apfs".into(),
+            total_bytes: 512_000_000_000,
+            free_bytes: 100_000_000_000,
+            used_bytes: 412_000_000_000,
+            is_removable: true,
+            is_network: false,
+            is_read_only: false,
+            is_root: false,
         }
     }
 
@@ -458,6 +602,59 @@ mod tests {
             "temp file must be renamed away"
         );
         assert_eq!(load_from_path(&path).unwrap().tree.total_logical(), 4097);
+    }
+
+    #[test]
+    fn identity_fields_survive_the_round_trip() {
+        let mut buf = Vec::new();
+        write_to(&mut buf, &sample()).unwrap();
+        let restored = read_from(&buf).unwrap();
+
+        assert_eq!(restored.meta.host_id, "0123456789abcdef");
+        assert_eq!(restored.meta.volume_name, "Sample");
+        assert_eq!(restored.meta.volume_filesystem, "apfs");
+        assert_eq!(restored.meta.volume_capacity, 512_000_000_000);
+    }
+
+    #[test]
+    fn a_snapshot_from_another_machine_is_not_accepted() {
+        // The scenario this exists for: the same flash drive plugged into a
+        // second Mac, whose startup disk also answers to /dev/disk3s1.
+        let mut meta = sample().meta;
+        let volume = sample_volume();
+        assert!(
+            !meta.matches_volume(&volume),
+            "a foreign host id must never match"
+        );
+
+        meta.host_id = host_id();
+        assert!(
+            meta.matches_volume(&volume),
+            "same host and volume: a match"
+        );
+
+        // Same id and host, but visibly a different disk.
+        let mut relabelled = volume.clone();
+        relabelled.total_bytes += 1;
+        assert!(!meta.matches_volume(&relabelled));
+
+        let mut renamed = volume.clone();
+        renamed.name = "Someone else's disk".into();
+        assert!(!meta.matches_volume(&renamed));
+    }
+
+    #[test]
+    fn host_id_is_stable_within_a_run() {
+        assert_eq!(host_id(), host_id());
+        assert_eq!(host_id().len(), 16);
+    }
+
+    #[test]
+    fn snapshots_from_different_machines_get_different_files() {
+        let a = snapshot_path_for("aaaaaaaaaaaaaaaa", "/dev/disk3s1");
+        let b = snapshot_path_for("bbbbbbbbbbbbbbbb", "/dev/disk3s1");
+        assert_ne!(a, b, "two machines must not share one cache file");
+        assert_eq!(a.parent(), b.parent());
     }
 
     #[test]
