@@ -1,0 +1,33 @@
+# Deliberately its own workspace: the desktop shell drags in the whole
+# Tauri/WebKit toolchain, and keeping it out of the root workspace means
+# `cargo test` on the engine stays fast and buildable on any host.
+[workspace]
+
+[package]
+name = "helios-app"
+description = "Helios — a lightweight, read-only disk usage visualizer."
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+license = "MIT"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+helios-core = { path = "../crates/helios-core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+# Tauri's default production feature set; `cargo tauri dev` enables devtools.
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Helios",
+  "version": "0.1.0",
+  "identifier": "app.helios.diskviz",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Helios",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "titleBarStyle": "Transparent",
+        "hiddenTitle": true,
+        "theme": null
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "app"],
+    "icon": ["icons/icon.icns", "icons/icon.ico", "icons/128x128.png"],
+    "category": "Utility",
+    "copyright": "Helios contributors",
+    "shortDescription": "Read-only disk usage visualizer",
+    "longDescription": "Helios shows where your storage went: treemaps, folder trees, largest files and category breakdowns. It never modifies, moves or deletes anything, and it never touches the network.",
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    }
+  }
+}
