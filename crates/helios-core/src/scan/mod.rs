@@ -16,8 +16,7 @@ use crate::platform;
 pub use control::{ScanControl, ScanState};
 pub use progress::ScanProgress;
 
-/// Everything that shapes a scan. Constructed by the UI, defaulted sensibly for
-/// headless callers.
+/// Everything that shapes a scan, defaulted sensibly.
 #[derive(Debug, Clone)]
 pub struct ScanOptions {
     /// Volume mount point or folder to scan.
@@ -36,8 +35,7 @@ pub struct ScanOptions {
     /// Attribute a hardlinked inode's bytes to the first path that reaches it.
     pub deduplicate_hardlinks: bool,
     /// Deepest directory level to expand. `Some(1)` sizes the top-level
-    /// folders of a volume without descending further, which is how the UI
-    /// renders a fast first pass.
+    /// folders of a volume without descending further, for a fast first pass.
     pub max_depth: Option<u16>,
     /// Skip the platform's pseudo-filesystems and firmlink mounts.
     pub use_default_exclusions: bool,
@@ -45,8 +43,8 @@ pub struct ScanOptions {
     pub exclusions: Vec<PathBuf>,
     /// Volume used-bytes, from the OS, used to estimate completion.
     pub expected_bytes: Option<u64>,
-    /// Minimum wall time between progress callbacks. 100 ms keeps the UI
-    /// smooth at 10 Hz without flooding the IPC bridge.
+    /// Minimum wall time between progress callbacks. 100 ms reads as smooth
+    /// to a human without spending the scan's time on reporting.
     pub progress_interval: Duration,
     /// Cap on errors kept in the tree, so a systematically unreadable volume
     /// cannot grow the snapshot without bound.
@@ -131,7 +129,7 @@ pub fn scan(
     walker::scan(options, control, on_progress)
 }
 
-/// Convenience wrapper for headless callers that do not want progress events.
+/// Convenience wrapper for callers that do not want progress events.
 pub fn scan_blocking(options: &ScanOptions) -> ScanOutcome {
     scan(options, ScanControl::new(), |_| {})
 }

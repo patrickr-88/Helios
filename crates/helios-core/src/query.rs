@@ -1,10 +1,10 @@
 //! Filtering, sorting and aggregation over a scanned tree.
 //!
-//! Every list the UI shows — folder children, largest files, largest folders,
+//! Every list Helios prints — folder children, largest files, largest folders,
 //! category breakdown, search results — is produced here, from the arena, with
-//! no intermediate collections beyond the result itself. The UI never receives
-//! the full tree: it asks for the page it is about to draw, which is what keeps
-//! the IPC bridge and the renderer's memory flat regardless of scan size.
+//! no intermediate collections beyond the result itself. Callers ask for the
+//! rows they are about to show rather than for the tree, which is what keeps the
+//! cost of a view flat regardless of scan size.
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::category::{extension_of, Category};
 use crate::model::{Node, NodeFlags, NodeId, Tree};
 
-/// One row as the UI sees it.
+/// One row of output.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
@@ -329,7 +329,7 @@ pub fn category_breakdown(tree: &Tree, filter: &Filter) -> Vec<CategorySummary> 
 }
 
 /// Full-tree search. `limit` caps the result set so a one-character query on a
-/// 10-million-file volume cannot flood the UI.
+/// 10-million-file volume cannot produce an endless dump.
 pub fn search(tree: &Tree, filter: &Filter, sort: SortKey, limit: usize) -> Vec<Entry> {
     let mut out = Vec::new();
     for (id, _) in tree.iter() {

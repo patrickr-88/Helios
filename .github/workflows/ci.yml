@@ -10,10 +10,10 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  # The engine's tests make no platform assumptions, so Linux is the fast gate
-  # that runs on every push.
-  engine:
-    name: Engine (${{ matrix.os }})
+  # One job, two platforms. The engine makes no platform assumptions, so Linux
+  # is the fast gate and macOS is the shipping target.
+  test:
+    name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -25,16 +25,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --all-targets
       - run: cargo test --workspace --doc
-      # The CLI is also the benchmark harness: a smoke run catches anything that
-      # only breaks against a real filesystem.
-      - run: cargo run --release -p helios-cli -- volumes
-      - run: cargo run --release -p helios-cli -- scan . --top 5 --no-progress
+      # Smoke-test the real binary against a real filesystem: several classes of
+      # bug only appear outside a fixture.
+      - run: cargo build --release
+      - run: ./target/release/helios
+      - run: ./target/release/helios . --top 5 --quiet
+      - run: ./target/release/helios . --tree --depth 3 --quiet
+      - run: ./target/release/helios . -o /tmp/report.pdf --quiet
 
   # Windows is Phase 6 and platform/windows.rs has never been compiled against
-  # the real SDK. This job exists to tell us exactly what is left; it is
-  # non-blocking until that work lands, at which point remove continue-on-error.
-  engine-windows:
-    name: Engine (windows, not yet required)
+  # the real SDK. This job exists to tell us what is left; it is non-blocking
+  # until that work lands, at which point remove continue-on-error.
+  test-windows:
+    name: Test (windows, not yet required)
     runs-on: windows-latest
     continue-on-error: true
     steps:
@@ -54,44 +57,3 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
-
-  frontend:
-    name: Frontend
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-
-  # The desktop shell needs the platform's webview toolchain, so it is checked
-  # separately from the engine.
-  shell:
-    name: Desktop shell (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-      - name: Install WebKitGTK (Linux only)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      - run: cargo check --manifest-path src-tauri/Cargo.toml

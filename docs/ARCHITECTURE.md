@@ -2,16 +2,15 @@
 
 ## The shape of the problem
 
-A disk visualizer is not a UI problem with some file I/O attached. It is a data
-problem — tens of millions of entries, gathered under syscall pressure, queried
-interactively — with a UI attached. Every significant decision here follows from
+A disk analyzer is not a UI problem with some file I/O attached. It is a data
+problem — tens of millions of entries, gathered under syscall pressure — with a
+thin presentation layer on top. Every significant decision here follows from
 that:
 
 1. **The tree is the product.** Building it fast and holding it small is the
    whole engineering task. Everything else is a view over it.
-2. **The tree never leaves Rust.** The webview receives the few hundred rows it
-   is about to paint. This is what keeps a 10-million-file scan feeling the same
-   as a 10-thousand-file one.
+2. **The engine is a library.** It knows nothing about terminals, argument
+   parsing or output formats. The program is one file that calls it.
 3. **The OS is behind one door.** All platform-specific code lives in
    `platform/`, so a second OS is a module, not a fork.
 4. **Read-only is structural.** Not a policy the code follows — a property the
@@ -21,26 +20,18 @@ that:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  React + TypeScript  (src/)                                          │
-│  Dashboard · Treemap (canvas) · Folder tree · Largest · Categories    │
-│  Holds: the current page of rows. Never the tree.                    │
-└───────────────────────────────┬──────────────────────────────────────┘
-                                │  Tauri IPC — JSON, ~20 commands,
-                                │  3 events (progress / finished / failed)
-┌───────────────────────────────┴──────────────────────────────────────┐
-│  Desktop shell  (src-tauri/)                                         │
-│  Command handlers · scan lifecycle · app state · export to disk      │
-│  ~450 lines. Contains no analysis logic.                             │
+│  helios-cli — the program                                            │
+│  argument parsing · text tables, bars and the folder tree · Ctrl-C   │
+│  One file. Contains no analysis logic.                               │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │  plain Rust calls
 ┌───────────────────────────────┴──────────────────────────────────────┐
-│  helios-core                                                         │
+│  helios-core — the engine                                            │
 │                                                                       │
 │   scan/      parallel walker, progress + ETA, pause/cancel,          │
 │              incremental rescan                                       │
 │   model/     the arena tree (56 bytes per node)                       │
 │   query/     filters, sorting, top-N, category aggregation            │
-│   treemap/   squarified layout                                        │
 │   snapshot/  binary cache, atomic writes                              │
 │   report/    CSV · JSON · PDF                                         │
 │   platform/  ← the only OS-specific code in the entire codebase       │
@@ -50,42 +41,45 @@ that:
                      macOS / Windows / Unix
 ```
 
-`crates/helios-cli` sits directly on `helios-core`, bypassing the shell
-entirely. It is not a toy: it is how the engine gets profiled, how CI exercises
-scanning on real trees, and how the `du` cross-check in the README is run.
+Two layers, and the boundary is a plain library API — no IPC, no serialization
+between them, no process boundary. A front end is whatever calls `scan()` and
+then queries the tree; today that is a terminal program, and
+[TECHNOLOGY-CHOICE.md](TECHNOLOGY-CHOICE.md) records the graphical one that was
+built and then removed.
 
-## Data flow of one scan
+## Data flow of one run
 
 ```
-  UI: startScan({ path, incremental })
+  helios /Volumes/Backup --cache
+        │
+        ├─ platform::volumes()          which volume is this path on?
+        ├─ snapshot::load_for_volume()  a previous scan to reuse, if any
         │
         ▼
-  shell: spawn driver thread ──────────────────────────────┐
-        │                                                   │
-        │  scan::scan(options, control, on_progress)        │
-        │        │                                          │
-        │        ├── N workers: read_dir + stat ─┐          │
-        │        │                                ▼         │
-        │        └── 1 collector: owns the arena, dedups    │
-        │            hardlinks, grafts cached subtrees      │
-        │                     │                             │
-        │        every 100 ms │ ScanProgress ──── emit ─────┼──▶ UI progress bar
-        │                     ▼                             │
-        │            rollup() → Tree                        │
-        ▼                                                   │
-  shell: store Arc<Tree> in AppState, write snapshot ───────┘
+    scan::scan(options, control, on_progress)
         │
-        └── emit scan://finished { totals, counts, timings } ──▶ UI
-
-  then, per view:
-  UI: treemapLayout(scanId, nodeId, w, h) ──▶ Vec<Tile>   (a few thousand rects)
-      listChildren(scanId, nodeId, filter) ──▶ Vec<Entry> (one folder)
-      largestEntries(scanId, dirs, 100)    ──▶ Vec<Entry> (top-N via a heap)
+        ├── N workers: read_dir + stat ─┐
+        │                                ▼
+        └── 1 collector: owns the arena, dedups hardlinks,
+            grafts unchanged subtrees from the previous scan
+                     │
+     every 100 ms    │ ScanProgress ──▶ the progress line on stderr
+                     ▼
+             rollup() → Tree
+                     │
+        ┌────────────┼────────────────────────────┐
+        ▼            ▼                            ▼
+  query::largest  query::category_breakdown  snapshot::save
+  query::children query::search              report::to_{csv,json,pdf}
+        │
+        ▼
+   text tables, bars and the folder tree on stdout
 ```
 
-The UI holds a `scanId` and a `nodeId`, nothing more. Drilling into a folder is
-a new query with a different `nodeId` — there is no client-side tree to keep in
-sync, and no state that can drift from what the engine actually saw.
+Queries run against the arena in memory and return only the rows about to be
+printed. That mattered when a webview was on the other end of an IPC bridge; it
+still matters now, because "top 100 of 10 million files" is a bounded heap over
+a linear pass rather than a sort of everything.
 
 ## The tree
 
@@ -194,17 +188,16 @@ job sender.)
 
 ```
 Helios/
-├── Cargo.toml                    workspace: core + cli (src-tauri excluded on purpose)
-├── package.json                  React/Vite/Tauri front end
+├── Cargo.toml                    workspace: two crates
+├── install.sh                    build and put the binary on your PATH
 ├── crates/
-│   ├── helios-core/
+│   ├── helios-core/              the engine
 │   │   ├── src/
 │   │   │   ├── lib.rs            crate docs, the bitflags_lite! macro, re-exports
 │   │   │   ├── model.rs          arena tree, rollup, path reconstruction
 │   │   │   ├── category.rs       extension → category, allocation-free
 │   │   │   ├── query.rs          filters, sorting, top-N, aggregation
-│   │   │   ├── treemap.rs        squarified layout + hit testing
-│   │   │   ├── snapshot.rs       binary cache, atomic write
+│   │   │   ├── snapshot.rs       binary cache, atomic write, host identity
 │   │   │   ├── fmt.rs            byte/date formatting
 │   │   │   ├── scan/
 │   │   │   │   ├── mod.rs        options, stats, entry point
@@ -216,50 +209,53 @@ Helios/
 │   │   │   │   ├── mod.rs        report assembly, CSV, JSON
 │   │   │   │   └── pdf.rs        a minimal PDF writer (no dependency)
 │   │   │   └── platform/
-│   │   │       ├── mod.rs        the seam: types + free functions
+│   │   │       ├── mod.rs        the seam: types, free functions, portable mode
 │   │   │       ├── macos.rs      getfsstat, bundles, firmlinks, UF_HIDDEN
 │   │   │       ├── windows.rs    GetLogicalDrives, NTFS/ReFS, reparse points
 │   │   │       ├── linux.rs      /proc/mounts, statvfs (dev + CI)
 │   │   │       └── unix_shared.rs  metadata conversion shared by macOS/Linux
 │   │   └── tests/read_only.rs    the guarantee, enforced
-│   └── helios-cli/src/main.rs    headless front end
-├── src-tauri/
-│   ├── src/{main,commands,state}.rs
-│   ├── capabilities/default.json  no fs/shell/http plugins — see SECURITY.md
-│   └── tauri.conf.json
-├── src/
-│   ├── App.tsx                   shell: views, scan lifecycle, filters
-│   ├── components/               Sidebar, Treemap, FolderTree, EntryTable, …
-│   ├── lib/{api,types,format,mock}.ts
-│   └── styles/app.css            one stylesheet, light + dark tokens
+│   └── helios-cli/src/main.rs    the program: arguments, tables, bars, tree
+├── scripts/make-portable-drive.sh
 └── docs/
 ```
 
 ## Dependencies
 
-The engine has three: `serde` (IPC boundary), `serde_json`, and
-`crossbeam-channel` (the walker's queues), plus `libc` or `windows-sys` per
-platform. Flag sets, the snapshot codec, the PDF writer, date formatting and
-argument parsing are all in-tree — each is under 250 lines, and each avoided
-crate is one less thing to audit in an app whose entire pitch is that it is
-small, offline and inspectable.
+Four, and each earns its place:
 
-The front end has React and Vite. No component library, no state library, no
-charting library, no virtualization library: the interface is one stylesheet and
-a handful of components, and the production bundle is 186 KB (60 KB gzipped).
+| Crate | Why it is here |
+|---|---|
+| `crossbeam-channel` | The walker's job and result queues |
+| `serde` + `serde_json` | The JSON report, and only that |
+| `libc` / `windows-sys` | The platform layer's syscalls |
+
+Flag sets, the snapshot codec, the PDF writer, date formatting, byte formatting
+and argument parsing are all in-tree — each is under 250 lines, and each avoided
+crate is one less thing to audit in a program whose pitch is that it is small,
+offline and inspectable.
+
+`serde` is the one that could plausibly go: it and its derive macro pull in
+`syn`, `quote` and `proc-macro2`, which dominate both the dependency graph and
+the build time. Hand-rolling JSON output would remove them. It stays because
+correct JSON string escaping is easy to get subtly wrong, `serde` is among the
+most-audited crates in the ecosystem, and the derive keeps the report's fields
+and its serialized shape from drifting apart. Compiled size is not the argument
+either way — the binary is 756 KB.
 
 ## Testing
 
-75 tests, all runnable on any platform:
+78 tests, all runnable on any platform:
 
 - **Correctness under nasty inputs** — symlink loops, hardlinks, permission
   denials, deep nesting, non-ASCII names, zero-byte and truncated snapshots.
 - **The read-only guarantee** — a real scan leaves a fingerprinted tree
   byte-identical, and a source audit fails the build on any mutating `fs::` call
   outside the snapshot module or any networking type anywhere.
-- **Geometry** — treemap tiles tile their viewport, never overlap, nest inside
-  their parents, and keep aspect ratios readable.
 - **Round-trips** — snapshots, JSON reports, and a structurally valid PDF.
+- **The program itself** — argument parsing, size suffixes, report format
+  inference, and the folder tree's indentation (whose box-drawing characters are
+  multi-byte, and which an earlier version sliced on byte offsets).
 
 The Linux backend exists mostly so this suite runs in CI on every push. Keeping
 a second platform honest is what keeps the seam real.

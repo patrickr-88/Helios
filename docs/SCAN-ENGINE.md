@@ -76,8 +76,7 @@ cross-check against.
 **Logical and physical size are both carried.** `st_blocks × 512` is the truth
 about how much disk a file occupies; `st_size` is the truth about how much data
 it contains. They diverge for sparse files, APFS clones and compressed files,
-sometimes by orders of magnitude. Both are stored, the UI shows both, and the
-inspector calls out the difference when it exceeds rounding.
+sometimes by orders of magnitude. Both are stored, and both appear in reports.
 
 **Other filesystems are not crossed by default.** Scanning `/` should not
 silently pull in a 4 TB Time Machine drive mounted under `/Volumes`. Mount
@@ -91,10 +90,10 @@ other synthetic mounts.
 
 **Unreadable locations degrade gracefully.** A failed `read_dir` marks the node
 `INACCESSIBLE`, records the reason, and the scan continues. A failed `stat` on
-one entry skips that entry, not the directory. The counts surface in the UI and
-in every report, because a total that is silently 40 GB short is worse than one
-labelled incomplete — on macOS, an app without Full Disk Access will hit this
-constantly.
+one entry skips that entry, not the directory. The counts are printed after the
+scan and appear in every report, because a total that is silently 40 GB short is
+worse than one labelled incomplete — on macOS, a program without Full Disk Access
+hits this constantly.
 
 **Depth is a listing limit, not a hiding limit.** With `max_depth: 1`, the
 volume's top-level folders are expanded and sized, and *their* subfolders are
@@ -103,8 +102,8 @@ still listed — just not walked. The user sees that more exists.
 ## Progress and ETA
 
 Counters are updated by the collector (single-threaded, so no atomics) and
-emitted at most every 100 ms — 10 Hz is smooth to a human and keeps the IPC
-bridge idle.
+emitted at most every 100 ms — 10 Hz is smooth to a human, and the progress line
+is skipped entirely when stderr is not a terminal.
 
 The ETA is deliberately conservative:
 
@@ -117,17 +116,18 @@ The ETA is deliberately conservative:
 - Nothing is shown for the **first 1.5 seconds**. An estimate that reads "4
   hours" and then "20 seconds" is worse than no estimate, and it is the single
   fastest way to make a tool feel untrustworthy.
-- The UI rounds hard — "about 2 minutes left", never "1 m 47 s".
+- The output rounds hard — "~2 min left", never "1 m 47 s".
 
 ## Pause, resume, cancel
 
 `ScanControl` is a cloneable handle over an atomic state plus a condvar. Paused
-workers park on the condvar rather than spinning, so a paused scan costs no CPU
-— which is the point, since users pause to get their machine back.
+workers park on the condvar rather than spinning, so a paused scan costs no CPU.
+The command-line program uses cancel (Ctrl-C); pause and resume are part of the
+library API, for a caller that wants them.
 
-Cancellation is terminal and lands within ~50 ms. The tree returned by a
-cancelled scan is a valid partial result, not garbage: the UI can display it,
-and it is simply labelled as incomplete. It is deliberately *not* written to the
+Cancellation is terminal and lands within ~50 ms — this is what Ctrl-C does. The
+tree returned by a cancelled scan is a valid partial result, not garbage: it gets
+printed, labelled as stopped early. It is deliberately *not* written to the
 snapshot cache, so the next incremental rescan does not inherit the gap.
 
 ## Incremental rescan
@@ -146,10 +146,9 @@ nothing per entry.
 
 **The trade-off, stated plainly:** mtime does not change when a file *inside*
 the directory merely grows. An incremental rescan is exact about structure and
-can lag on the size of files rewritten in place. So it is not the default —
-"Rescan" is incremental, "Full scan" is not, both are one click, and the number
-of reused folders is reported in the scan summary so the user knows what they
-got.
+can lag on the size of files rewritten in place. So it is not the default — `--cache`
+opts in, a plain run always walks everything, and the number of reused folders is
+printed so you know which you got.
 
 When grafting, directory sizes are reset to zero on the way in and recomputed by
 the rollup pass. Carrying the old rolled-up totals across would double-count the

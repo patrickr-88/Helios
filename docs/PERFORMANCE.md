@@ -10,30 +10,29 @@
 | Incremental updates | ✅ 1.16 s → **16 ms** on an unchanged `/usr` |
 | Background processing | ✅ scans run off the UI thread; pause parks on a condvar |
 | Minimal memory | ✅ see the arena design |
-| Fast rendering with large datasets | ✅ canvas treemap, windowed tables, layout in Rust |
+| Fast output with large datasets | ✅ every view is a bounded query, never a full dump |
 
 ## Measured
 
 4-core Linux VM, ext4, warm cache, release build:
 
 ```
-$ helios scan /usr
-  3.6 GB in 76,693 files, 7,843 folders
-  scanned in 1.2 s · 9.4 MB of memory
+$ helios /usr
+  3.6 GB in 76,693 files, 7,843 folders · 1.2 s      9.4 MB of memory
 
-$ helios scan /
-  7.9 GB in 149,955 files, 22,903 folders
-  scanned in 1.5 s · 17 MB of memory        ≈ 100,000 files/sec
+$ helios /
+  7.9 GB in 149,955 files, 22,903 folders · 1.5 s    17 MB of memory
+                                                     ≈ 100,000 files/sec
 
-$ helios scan /usr --cache      # second run, nothing changed
-  scanned in 16 ms · 7,860 folders reused
+$ helios /usr --cache      # second run, nothing changed
+  … · 16 ms   7,860 folders reused from the last scan
 
 $ du -sb /usr  →  3,569,752,578
 $ helios       →  3,569,752,578            byte-identical
 ```
 
 Snapshot cache: 6.0 MB for 84,674 nodes (~71 bytes/node on disk).
-Frontend bundle: 186 KB, 60 KB gzipped.
+Binary: 756 KB. Startup to first output: 2 ms.
 
 Numbers on Apple silicon with APFS should be better for the walk (faster
 storage, and `getattrlistbulk` is available as a future optimization) and worse
@@ -90,20 +89,10 @@ runs only for nodes that already passed everything cheaper.
 `eq_ignore_ascii_case` windows rather than allocating a lowercased copy of every
 name in the tree.
 
-**Treemap layout in Rust.** A 20,000-tile layout is tens of milliseconds of
-arithmetic here versus hundreds of milliseconds of allocation churn in
-JavaScript. The UI receives a flat array and paints it.
-
-**Canvas, not DOM.** 20,000 rectangles as DOM nodes is 20,000 layout objects and
-a style recalculation per hover. On canvas it is one paint and a hit-test.
-
-**Windowed tables.** Fixed row height, only the visible slice rendered, spacer
-rows for the rest. A 100,000-row result scrolls like a 20-row one, without a
-virtualization dependency.
-
-**Debounced work.** Treemap layout is debounced 90 ms against resize; search is
-debounced 220 ms against typing. Dragging a window edge issues one layout, not
-sixty.
+**Bounded output.** Every view asks for the rows it is about to print — the top
+15, one folder's children, a tree capped by depth. Nothing ever materializes the
+whole tree as text, so printing costs the same on a 10-million-file volume as on
+a small one.
 
 **Bounded queues.** The results channel holds 512 batches, so a fast disk cannot
 let workers run arbitrarily far ahead of the collector and balloon peak memory.
@@ -111,8 +100,9 @@ let workers run arbitrarily far ahead of the collector and balloon peak memory.
 **Small worker stacks.** 256 KB instead of the default 2 MB — the workers hold
 no recursion, and one core's worth of threads at 2 MB each is pure waste.
 
-**Progress throttled to 10 Hz.** Smooth to a human, and the IPC bridge stays
-idle between samples.
+**Progress throttled to 10 Hz.** Smooth to a human, and cheap: the progress line
+is one `write` to stderr per sample, and it is skipped entirely when stderr is
+not a terminal.
 
 ## Optimizations that are deliberately out
 
@@ -140,24 +130,23 @@ bottleneck is the kernel.
 
 Raw speed is only half of feeling fast:
 
-- **A snapshot loads at launch**, so the app opens showing data rather than an
-  empty state and a "Scan" button.
-- **"Rescan" is incremental**, so the common case is seconds.
+- **`--cache` makes the second run instant**, so the common case is seconds.
 - **The ETA stays quiet for 1.5 s** rather than showing a number that will
   swing.
-- **Pause actually parks threads** — the machine comes back immediately.
-- **Cancel returns a usable partial tree** instead of throwing away the work.
-- **Every list is capped** server-side, so no interaction can hang the UI.
+- **Ctrl-C returns a usable partial result** instead of throwing away the work.
+- **Every list is capped**, so no flag combination produces an endless dump.
+- **Startup is 2 ms**, which is the difference between a tool you reach for and
+  one you think about first.
 
 ## Regression watch
 
 The measurements above are reproducible with the CLI, which is why it exists:
 
 ```sh
-cargo build --release -p helios-cli
-time ./target/release/helios scan /usr --no-progress
-time ./target/release/helios scan /usr --cache --no-progress   # incremental
-du -sb /usr                                                     # cross-check
+cargo build --release
+time ./target/release/helios /usr --quiet
+time ./target/release/helios /usr --cache --quiet   # incremental
+du -sb /usr                                          # cross-check
 ```
 
 `Node` is pinned at 56 bytes by an assertion in `model.rs`; growing it is a

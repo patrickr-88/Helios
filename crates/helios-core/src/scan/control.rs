@@ -1,9 +1,9 @@
 //! Pause / resume / cancel for an in-flight scan.
 //!
-//! The handle is cloneable and `Send + Sync`, so the UI thread (or a Tauri
-//! command) can hold one while worker threads observe it. Pausing parks the
-//! workers on a condvar rather than spinning, so a paused scan costs no CPU —
-//! important because a user pausing a scan usually wants their machine back.
+//! The handle is cloneable and `Send + Sync`, so a caller can hold one while
+//! worker threads observe it — the command-line program hands one to its signal
+//! handler so Ctrl-C stops a scan instead of killing the process. Pausing parks
+//! the workers on a condvar rather than spinning, so a paused scan costs no CPU.
 
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex};

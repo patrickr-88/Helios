@@ -132,7 +132,7 @@ fn from_metadata(md: &fs::Metadata) -> EntryMeta {
         logical_size: md.file_size(),
         // On-disk size needs GetCompressedFileSizeW, an extra syscall per file
         // that would roughly double scan time. We report logical size and
-        // resolve the true figure lazily when the UI inspects one file.
+        // resolve the true figure lazily for a single file when asked.
         physical_size: md.file_size(),
         mtime: windows_time_to_unix(md.last_write_time()),
         hidden: attrs & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM) != 0,

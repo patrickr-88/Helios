@@ -1,117 +1,110 @@
-# Technology choice
+# Technology choices
 
-**Recommendation: Tauri + React + TypeScript, with the scan engine as a
-standalone Rust crate that none of the above can see.**
+**Helios is a Rust command-line program with a library at its core.** It was
+briefly a desktop app; that layer was built, worked, and then removed. This
+document records both decisions, because the second one is only defensible if
+you can see what it cost.
 
-The important half of that sentence is the second half. The engine is a library
-with no knowledge of Tauri, webviews or JavaScript; the shell that binds it to a
-UI is ~450 lines. That structure is what makes the shell choice reversible — if
-Tauri turns out to be wrong in two years, the thing that took months to get
-right is untouched.
+## Why Rust
 
-## The three options, measured against what this app actually is
+The hard part of this product is systems programming: millions of `lstat` calls,
+a 56-byte-per-node arena that has to fit ten million entries in a sane memory
+budget, a parallel walker that must not deadlock, and platform APIs
+(`getfsstat`, `GetLogicalDrives`) called directly.
 
-Helios is a CPU- and syscall-heavy data tool with a fairly simple interface. It
-has to scan millions of files without heating the machine, hold a large tree in
-a modest memory budget, and ship as something a privacy-minded user will trust.
-That profile pushes hard on runtime overhead and hardly at all on UI framework
-richness.
+That rules out the scripting languages on throughput and memory layout grounds —
+Node's `fs.readdir`/`fs.lstat` through libuv, with a garbage-collected object per
+entry, is several times slower and cannot produce a packed arena at all. It
+leaves C, C++, Go, Swift and Rust. Rust wins on three specifics that matter here:
+
+- **No garbage collector**, so a 700 MB arena is 700 MB, not 700 MB plus
+  collector headroom and pauses mid-scan.
+- **Memory safety across a threaded walker**, which is exactly where a C
+  implementation of this design would spend its bug budget.
+- **One binary, no runtime**, which is what makes the flash-drive story work:
+  756 KB that runs on any Mac without installing anything.
+
+Go would be a reasonable second choice and would cost perhaps 2× the memory per
+node with a GC in the loop. Swift would tie the engine to Apple platforms, which
+the Windows requirement rules out.
+
+## Why a command-line program
+
+Because it is the whole product, at a twentieth of the weight.
+
+The questions a disk tool answers — what is big, what is where, what kind of
+thing is it — are answered by ranked lists, proportional bars and an indented
+tree. A terminal renders all of those. What a GUI genuinely adds is the treemap:
+an at-a-glance shape of a disk that no text view reproduces. That is one view,
+and it cost a webview, a JavaScript toolchain, an IPC bridge and a bundling
+pipeline.
+
+What removing it bought:
+
+| | Desktop app | Command-line program |
+|---|---|---|
+| Ships as | ~10 MB `.app` bundle + `.dmg` | **756 KB binary** |
+| To build | Rust **and** Node 20+, npm install, Vite, Tauri CLI | **Rust** |
+| To install | Build, sign, notarize, drag to /Applications | Copy one file |
+| Runtime | System WebView process + Rust process | **One process, 2 ms startup** |
+| Attack surface | Webview, CSP, IPC command allowlist | Reads directories; writes one cache file |
+| Lines of code | ~5,500 (Rust + TypeScript + CSS) | **~3,500 Rust** |
+| Composes with other tools | No | `helios / --find x \| grep`, cron, scripts |
+
+The engine did not change. It was a library the shell called, and it is now a
+library the program calls — which is why deleting a whole front end was a day's
+work rather than a rewrite, and why the "what if we want the GUI back" answer is
+"add a second front end", not "start over".
+
+## The comparison that was made when there was a GUI
+
+Kept because it is still the right analysis *if* a graphical version returns, and
+because the reasoning explains the shape of the code that survived.
 
 | | **Tauri + React** | **Electron + React** | **Native SwiftUI** |
 |---|---|---|---|
 | Installed size | ~8–12 MB | ~150–200 MB | ~5 MB |
-| Idle RSS (empty window) | ~60–90 MB | ~200–300 MB | ~40 MB |
-| Scan engine language | Rust | Node/N-API or a Rust sidecar | Swift |
+| Idle RSS | ~60–90 MB | ~200–300 MB | ~40 MB |
+| Scan engine language | Rust | Node, or a Rust sidecar | Swift |
 | Windows port | Recompile + one platform module | Same | **Full rewrite** |
 | macOS look and feel | Good with care | Good with care | Perfect, free |
-| Sandboxing / permissions | Per-command capability allowlist | All-or-nothing Node access | App Sandbox + entitlements |
-| Attack surface | Rust core + system WebView | Full Chromium + Node runtime | Cocoa |
-| Team can hire for it | Web + some Rust | Web | Swift only |
-| Build/release complexity | Moderate (cross-compile, signing) | Low | Low on Apple, N/A elsewhere |
+| Attack surface | Rust core + system WebView | Full Chromium + Node | Cocoa |
 
-### Electron
+**Electron** was rejected on the engine, not the bundle size: the honest Electron
+design is "a Rust sidecar plus Electron", at which point you ship Chromium and a
+JavaScript runtime purely to host a window.
 
-Rejected primarily on the engine, not the bundle size. Node cannot walk a
-filesystem at the speed this app needs — `fs.readdir`/`fs.lstat` through libuv's
-thread pool, with a V8 object per entry, is several times slower than a native
-walker and produces garbage-collected objects where we need a packed arena. The
-realistic Electron design is *"a Rust sidecar binary plus Electron"*, at which
-point you are running Chromium and Node purely to host a window, and paying
-150+ MB and ~250 MB of RSS for it.
+**SwiftUI** would have made the best Mac app and failed the Windows requirement
+outright — it would mean writing the scanning subtleties (hardlinks, sparse
+files, symlink loops, permissions) twice, forever.
 
-For an app whose pitch is "small, fast, private, offline", shipping a full
-browser engine and a JavaScript runtime with unrestricted filesystem access is
-also the wrong story to tell users.
+**Tauri** won that comparison, and the implementation confirmed the analysis: the
+shell was ~450 lines, the UI ~1,500, and the whole thing sat on the same engine
+the CLI uses. It was removed for weight, not because it was the wrong choice for
+a GUI.
 
-Electron would win if Helios needed heavy web-platform features (rich text,
-video, an ecosystem of Chromium-only APIs) or a large existing web codebase. It
-needs neither.
+## Why the dependency list is four crates
 
-### Native SwiftUI
+`crossbeam-channel` for the walker's queues, `serde` and `serde_json` for the
+JSON report, `libc`/`windows-sys` for syscalls. Everything else — argument
+parsing, flag sets, the snapshot codec, the PDF writer, date and byte formatting
+— is in-tree, each under 250 lines.
 
-The best macOS app of the three, and the reason it is not the answer is
-`Deliverable 10: future Windows support`. SwiftUI on Windows is not a thing;
-choosing it means writing the product twice and maintaining two implementations
-of the same scanning subtleties — hardlinks, sparse files, symlink loops,
-permission handling — forever. That is the most expensive possible way to reach
-Windows.
+This is not dependency asceticism for its own sake. The product's claim is that
+it reads your entire disk and can be trusted to do nothing else, and that claim
+is only checkable if a person can actually read the code. `clap` is excellent
+software; it is also more code than this entire program, to parse fourteen flags.
 
-There is also a subtler cost: Swift's filesystem APIs (`FileManager`,
-`URLResourceValues`) allocate per entry and are noticeably slower than raw
-`readdir`/`lstat`, so a fast Swift scanner ends up calling POSIX directly
-anyway — writing C-flavoured Swift to match what the Rust engine does natively.
+The one dependency that could plausibly go is `serde`, whose derive macro brings
+`syn`, `quote` and `proc-macro2` — most of the dependency graph and most of the
+build time. It stays because correct JSON escaping is easy to get subtly wrong
+and the derive keeps the report's fields and its serialized shape in step.
 
-SwiftUI is the right call if macOS is the only target that will ever matter, or
-if the app needs deep system integration (Finder extensions, Quick Look
-providers, App Store distribution with the sandbox). Worth revisiting for a
-Helios *menu bar* companion, where native fit matters most and the scanning
-lives in the shared engine anyway.
+## What would change these decisions
 
-### Tauri
-
-Wins on the axes that matter here:
-
-- **The engine is Rust, natively.** No FFI boundary in the hot path, no sidecar
-  process, no serialization tax on the scan itself. Millions of `lstat` calls
-  and a 56-byte-per-node arena are things Rust does without ceremony.
-- **The system WebView.** WebKit on macOS, WebView2 on Windows. The app ships
-  ~10 MB instead of ~180 MB, and gets OS security updates for its renderer.
-- **Capability-based permissions.** Helios grants its webview exactly its own
-  commands plus the save/open dialogs — no filesystem plugin, no shell plugin,
-  no HTTP plugin. A compromised renderer cannot read `~/Documents`, because the
-  IPC surface it can reach does not include a way to.
-- **One UI, both platforms.** The React interface compiles unchanged for
-  Windows; only `platform/windows.rs` needs finishing.
-
-The honest costs, stated plainly:
-
-- **Two WebView engines to test.** WebKit and WebView2 differ, mostly in CSS
-  edge cases. Mitigated by keeping the UI plain — one stylesheet, no exotic
-  layout, canvas for the only heavy view.
-- **Smaller ecosystem than Electron.** Fewer recipes, occasional rough edges in
-  bundling and signing. Tauri 2 is stable enough for a tool this size, and
-  nothing here depends on an exotic plugin.
-- **Rust in the team's stack.** Real, and appropriate: the hard part of this app
-  *is* systems programming, and would be systems programming in any language.
-- **Native chrome takes effort.** A web UI is macOS-shaped only if you make it
-  so — hence the system font stack, transparent title bar, real dark mode
-  tokens, and a canvas treemap rather than thousands of DOM nodes.
-
-## What the structure buys, regardless
-
-Because `helios-core` is a plain library with no shell dependency:
-
-- The **CLI** is a first-class front end (and how the engine is benchmarked).
-- **Tests run headless** on Linux CI with no display, no webview, no bundling.
-- A **SwiftUI or WinUI front end** remains possible later without touching the
-  engine — the same crate would back it.
-- The **shell is disposable**. That is the point: the expensive, subtle,
-  correctness-critical code is behind a boundary that no UI decision can reach.
-
-## Verdict
-
-Ship Tauri + React + TypeScript. Keep the engine a standalone crate, keep the
-shell thin enough to rewrite in an afternoon, and keep every OS-specific line
-behind `platform/`. That combination gets a small fast private app on macOS now,
-a Windows build for the cost of one module, and no lock-in to the framework
-choice if the landscape shifts.
+- **A treemap becomes essential.** Bring back a front end — Tauri by the
+  comparison above, or SwiftUI if macOS becomes the only target. The engine is
+  ready; `git log` has the deleted implementation.
+- **Non-technical users become the audience.** A terminal is a real barrier. That
+  is a GUI, and the analysis above applies.
+- **Scans need to run somewhere without a filesystem to walk.** Not a thing.

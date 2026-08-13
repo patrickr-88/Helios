@@ -1,6 +1,6 @@
 //! Compact arena representation of a scanned filesystem tree.
 //!
-//! Millions of nodes have to fit in a desktop app's memory budget, so the tree
+//! Millions of nodes have to fit in a modest memory budget, so the tree
 //! is stored as a struct-of-arrays arena rather than a graph of heap-allocated
 //! nodes:
 //!
@@ -53,8 +53,8 @@ bitflags_lite! {
         const HIDDEN       = 1 << 2;
         /// Lives under a path the platform layer classifies as OS-owned.
         const SYSTEM       = 1 << 3;
-        /// A macOS bundle (`.app`, `.framework`, …): a directory the UI should
-        /// present as a single item by default.
+        /// A macOS bundle (`.app`, `.framework`, …): a directory to present
+        /// as a single item by default.
         const PACKAGE      = 1 << 4;
         /// `read_dir`/`stat` failed — size is a floor, not a total.
         const INACCESSIBLE = 1 << 5;

@@ -1,8 +1,9 @@
 //! # Helios scan engine
 //!
 //! A read-only, platform-agnostic disk usage engine: it enumerates volumes,
-//! walks them in parallel, and answers the questions a storage visualizer asks
-//! — what is big, what is where, what kind of thing is it.
+//! walks them in parallel, and answers the questions a storage tool asks — what
+//! is big, what is where, what kind of thing is it. `helios-cli` is the program
+//! built on it; nothing here knows about terminals or output formats.
 //!
 //! ## Read-only by construction
 //!
@@ -26,7 +27,6 @@
 //! | [`model`] | The arena tree every other module reads |
 //! | [`scan`] | Parallel walker, progress, pause/cancel, incremental rescan |
 //! | [`query`] | Filtering, sorting, top-N, category aggregation |
-//! | [`treemap`] | Squarified layout for the treemap view |
 //! | [`snapshot`] | Binary cache with atomic writes |
 //! | [`report`] | CSV / JSON / PDF export |
 //! | [`fmt`] | Byte and date formatting |
@@ -53,7 +53,7 @@
 /// A tiny stand-in for the `bitflags` crate.
 ///
 /// Helios keeps its dependency list to `serde` and `crossbeam-channel`, both of
-/// which earn their place at the IPC and concurrency boundaries. Flag sets do
+/// which earn their place at the reporting and concurrency boundaries. Flag sets do
 /// not: what we need is a `u16` newtype with named constants, set operations
 /// and serde support, which is short enough to own outright and read in one
 /// sitting — and one fewer supply-chain surface for an app whose pitch is that
@@ -157,7 +157,6 @@ pub mod query;
 pub mod report;
 pub mod scan;
 pub mod snapshot;
-pub mod treemap;
 
 pub use category::Category;
 pub use model::{Node, NodeFlags, NodeId, Tree};

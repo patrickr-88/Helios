@@ -1,7 +1,7 @@
 # Platform support
 
 Everything OS-specific in Helios lives in `crates/helios-core/src/platform/`.
-Nothing else in the engine, the shell or the UI contains a `#[cfg(target_os)]`
+Nothing else — not the engine, not the program — contains a `#[cfg(target_os)]`
 or an OS assumption. That is the whole portability strategy.
 
 ## The seam
@@ -13,7 +13,7 @@ A platform backend supplies seven things:
 | `volumes() -> Vec<Volume>` | Enumerate mounts with capacity, used and free bytes |
 | `entry_meta(path) -> EntryMeta` | No-follow metadata for one path |
 | `meta_from_dir_entry(&DirEntry) -> EntryMeta` | The hot-path variant, using the open directory handle |
-| `is_package(name, is_dir) -> bool` | Directories the UI shows as one item (macOS bundles) |
+| `is_package(name, is_dir) -> bool` | Directories treated as one item (macOS bundles) |
 | `SYSTEM_PREFIXES: &[&str]` | Paths classified as OS-owned |
 | `DEFAULT_EXCLUSIONS: &[&str]` | Pseudo-filesystems and shadow mounts never worth walking |
 | `app_data_dir() -> PathBuf` | Where the snapshot cache lives |
@@ -50,8 +50,8 @@ iSCPreboot,Hardware}`, `/private/var/vm`, `/dev`, `/net`, `/home`, and
 `/Volumes/.timemachine`.
 
 **Bundles** — `.app`, `.framework`, `.photoslibrary`, `.xcodeproj` and friends
-are flagged `PACKAGE`. The treemap stops at them by default: a user thinks of
-Xcode as one 15 GB thing, not 40,000 files.
+are flagged `PACKAGE`, so a bundle can be reported as the one thing a user
+thinks it is — Xcode is one 15 GB item, not 40,000 files.
 
 **Hidden** means dot-prefixed *or* carrying `UF_HIDDEN` in `st_flags`, matching
 Finder.
@@ -61,12 +61,11 @@ sparse files report their real cost rather than their nominal one.
 
 **Permissions.** macOS blocks `~/Library/Mail`, `~/Photos Library`, TCC-guarded
 paths and much of `/private/var/db` unless the app has Full Disk Access. Helios
-records each denial, flags the folder, reports the count, and — in the UI —
-explains where to grant access. It never asks for elevation and never works
-around a denial.
+records each denial, flags the folder and reports the count after the scan. It
+never asks for elevation and never works around a denial.
 
-**Distribution.** Hardened runtime, notarized, `.dmg` and `.app` bundles,
-minimum macOS 11. No entitlements beyond what a read-only user-space app needs.
+**Distribution.** One binary, built from source; minimum macOS 11. Nothing to
+sign or notarize, because there is no bundle.
 
 ## Windows (`platform/windows.rs`) — written, needs a machine
 
@@ -97,10 +96,12 @@ Known gaps, honestly:
 | Physical size = logical size | Compressed/sparse NTFS files over-reported | `GetCompressedFileSizeW` per file is the same cost problem; resolve lazily for the inspector, and for the top-N lists only. |
 | Long paths | Paths over 260 chars may fail | Prefix `\\?\`, and set the long-path manifest flag. |
 | Per-user junction loops | Handled (reparse points skipped) | Verify against a real Windows profile. |
-| Not compiled or run | Unknown unknowns | Phase 5: CI runner + a real machine. |
+| Not compiled or run | Unknown unknowns | Phase 6: CI runner + a real machine. |
 
-The UI, the queries, the treemap, the reports and the snapshot format need no
-Windows-specific work at all.
+The queries, the reports, the snapshot format and the program's entire output
+layer need no Windows-specific work at all. The one cosmetic item is the box-
+drawing characters in the folder tree, which need a UTF-8 code page in the
+classic console host (Windows Terminal is fine as-is).
 
 ## Linux (`platform/linux.rs`) — development and CI
 
@@ -138,4 +139,3 @@ and network mounts.
 | Bundles as single items | ✅ | n/a | n/a |
 | Shadow-mount exclusions | ✅ firmlinks | ✅ pagefile etc. | ✅ procfs etc. |
 | Snapshot cache | ✅ | ✅ | ✅ |
-| Reveal in file manager | ✅ Finder | ✅ Explorer | ✅ xdg-open |

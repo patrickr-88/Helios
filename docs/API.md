@@ -1,140 +1,83 @@
 # API
 
-Two surfaces: the IPC commands the interface calls, and the Rust library any
-other front end would use.
+Two surfaces: the command line, and the Rust library it is built on.
 
-## Design rules
+## The command line
 
-1. **The tree never crosses the bridge.** Every command returns the page the UI
-   is about to draw. IPC cost is independent of scan size.
-2. **Long work is asynchronous, queries are not.** Scans run on their own thread
-   and report through events; everything else answers fast enough to await
-   inline.
-3. **Errors are sentences.** Commands return `Result<T, String>` with text the
-   UI can show a user directly.
-4. **Nothing writes to a scanned volume.** The only writes are exports to a path
-   the user chose in a save panel, and Helios's own snapshot cache.
-
-## Events
-
-| Event | Payload | When |
-|---|---|---|
-| `scan://progress` | `ScanProgress` | Up to 10×/second during a scan |
-| `scan://finished` | `ScanSummary` | Scan completed **or** was cancelled — check `state` |
-| `scan://failed` | `string` | The scan could not be started |
-
-```ts
-const stop = await listen<ScanProgress>("scan://progress", (p) => {
-  setFiles(p.files_seen);
-  setEta(p.eta_ms);
-});
+```
+helios                     list every volume, with capacity and free space
+helios <path>              scan a folder or volume and summarize it
+helios <path> --tree       show the folder tree instead of the top lists
+helios <path> -o out.pdf   write a report (.csv, .json or .pdf)
 ```
 
-## Commands
+| Flag | Meaning |
+|---|---|
+| `-t, --tree` | Folder tree with a size and share-of-parent at every level |
+| `-d, --depth <n>` | How deep the tree goes (default 2) |
+| `-n, --top <n>` | Entries per list (default 15) |
+| `--files` / `--folders` | Only one of the two lists |
+| `--find <text>` | Everything whose name — or path, if it contains a separator — matches |
+| `--ext <list>` | Only these extensions: `mp4,mov,zip` |
+| `--min-size <size>` | `500`, `10MB`, `2.5G`, `1 TB` |
+| `-o, --out <file>` | Write a report; the extension picks the format |
+| `-c, --cache` | Reuse and update the cached scan |
+| `--no-hidden` | Skip hidden files entirely |
+| `--threads <n>` | Scan workers (default: cores, capped at 8) |
+| `--exclude <path>` | Skip a path; repeatable |
+| `-q, --quiet` | No progress line |
+| `--info` | Where data is kept, whether it is writable, what is cached |
 
-### Volumes and scans
+Design rules, which are why there are no subcommands:
 
-| Command | Arguments | Returns |
-|---|---|---|
-| `list_volumes` | — | `Volume[]` |
-| `start_scan` | `request: ScanRequest` | `scanId` (immediately; work continues in the background) |
-| `pause_scan` | — | `void` |
-| `resume_scan` | — | `void` |
-| `cancel_scan` | — | `void` |
-| `active_scan` | — | `scanId \| null` |
-| `scan_summary` | `scanId` | `ScanSummary` |
-| `loaded_scans` | — | `scanId[]` |
+1. **The common case is one word.** `helios ~/Downloads` needs no verb; a path
+   is unambiguously a request to scan it, and no path is unambiguously a request
+   to list volumes.
+2. **The output format follows the filename.** `-o report.csv` means CSV. A
+   separate `--format` flag would be a second way to say the same thing, and a
+   way to say two contradictory things.
+3. **Nothing is interactive.** No prompts, no menus, no alternate screen. Output
+   is a stream you can pipe, and every list is bounded so a pipe cannot be
+   flooded.
+4. **Progress goes to stderr, results to stdout.** `helios / > report.txt` gives
+   a clean file with a live progress line still on the terminal.
+5. **Exit codes are the usual ones.** 0 on success — including a scan stopped
+   with Ctrl-C, which still prints partial results — and 1 on a bad argument or
+   an unreadable root.
 
-```ts
-interface ScanRequest {
-  path: string;
-  incremental?: boolean;      // reuse unchanged folders from the last scan
-  skipHidden?: boolean;
-  crossFilesystem?: boolean;  // descend into other mounted volumes
-  exclusions?: string[];
-  threads?: number | null;    // clamped to 1..32
-}
-```
-
-Only one scan runs at a time; starting a second cancels the first. Two
-concurrent walks contend for the same disk and both finish later than either
-would alone.
-
-### Querying a scan
-
-| Command | Arguments | Returns |
-|---|---|---|
-| `list_children` | `scanId, nodeId, filter?, sort?, descending?, limit?` | `Entry[]` |
-| `ancestors` | `scanId, nodeId` | `Entry[]` (root → node, for breadcrumbs) |
-| `treemap_layout` | `scanId, nodeId, width, height, maxDepth?, maxTiles?, includeHidden?` | `Tile[]` |
-| `largest_entries` | `scanId, dirs, limit?, filter?` | `Entry[]` |
-| `search_entries` | `scanId, filter, sort?, limit?` | `Entry[]` |
-| `category_breakdown` | `scanId, filter?` | `CategorySummary[]` |
-| `scan_issues` | `scanId, limit?` | `ScanIssue[]` (paths that could not be read) |
-
-Limits are clamped server-side (10,000 rows, 200,000 tiles). A one-character
-search on a 10-million-file volume cannot flood the bridge.
-
-### Reports, cache, system
-
-| Command | Arguments | Returns |
-|---|---|---|
-| `export_report` | `request: ExportRequest` | status string |
-| `list_snapshots` | — | `SnapshotMeta[]` (newest first) |
-| `load_snapshot` | `volumeId` | `ScanSummary` |
-| `forget_scan` | `scanId` | `void` (drops the in-memory tree and deletes the cache file) |
-| `reveal_in_file_manager` | `path` | `void` |
-| `app_info` | — | version, cache directory, thread default |
-
-```ts
-interface ExportRequest {
-  scanId: string;
-  format: "csv" | "json" | "pdf";
-  destination: string;   // from the save panel — never constructed by the UI
-  topN?: number;
-  filter?: Filter;
-}
-```
-
-`reveal_in_file_manager` opens Finder (or Explorer) with the item selected. It
-is the one place Helios hands off to something that *can* modify files —
-deliberately, because "show me where this is so I can deal with it" is the
-natural end of the workflow, and doing the deleting itself is a different
-product with a different risk profile.
-
-## Shared types
+## The types the library hands back
 
 `Entry` — one row in any list:
 
-```ts
-interface Entry {
-  id: number;               // NodeId, stable for the lifetime of the scan
-  name: string;
-  path: string;
-  size: number;             // logical bytes; rolled up for folders
-  physicalSize: number;     // bytes on disk
-  category: Category;
-  isDir: boolean; isSymlink: boolean; isHidden: boolean;
-  isSystem: boolean; isPackage: boolean;
-  isAccessible: boolean;    // false ⇒ size is a lower bound
-  mtime: number;            // Unix seconds
-  fileCount: number; dirCount: number;   // subtree counts, folders only
-  fractionOfParent: number; // 0–1, precomputed
+```rust
+pub struct Entry {
+    pub id: u32,                    // NodeId, stable for the lifetime of the scan
+    pub name: String,
+    pub path: String,
+    pub size: u64,                  // logical bytes; rolled up for folders
+    pub physical_size: u64,         // bytes on disk
+    pub category: Category,
+    pub is_dir: bool, pub is_symlink: bool, pub is_hidden: bool,
+    pub is_system: bool, pub is_package: bool,
+    pub is_accessible: bool,        // false ⇒ size is a lower bound
+    pub mtime: i64,                 // Unix seconds
+    pub file_count: u32, pub dir_count: u32,   // subtree counts, folders only
+    pub fraction_of_parent: f32,    // 0–1, precomputed
 }
 ```
 
 `Filter` — every field optional, all conditions AND-ed:
 
-```ts
-interface Filter {
-  minSize?: number; maxSize?: number;
-  extensions?: string[];        // lowercase, no dot
-  categories?: Category[];
-  modifiedAfter?: number; modifiedBefore?: number;   // Unix seconds
-  pathContains?: string; nameContains?: string;      // case-insensitive
-  includeHidden?: boolean;      // default false
-  includeSystem?: boolean;      // default false
-  onlyFiles?: boolean; onlyDirs?: boolean;
+```rust
+pub struct Filter {
+    pub min_size: Option<u64>, pub max_size: Option<u64>,
+    pub extensions: Vec<String>,        // lowercase, no dot
+    pub categories: Vec<Category>,
+    pub modified_after: Option<i64>, pub modified_before: Option<i64>,
+    pub path_contains: Option<String>, pub name_contains: Option<String>,
+    pub include_hidden: bool,           // default false
+    pub include_system: bool,
+    pub only_files: bool, pub only_dirs: bool,
 }
 ```
 
@@ -142,19 +85,15 @@ The predicate order inside `Filter::matches` is deliberate: cheap integer
 comparisons first, then the name, and path reconstruction last — it is the only
 expensive test, and it runs only for nodes that already passed everything else.
 
-`Tile` — one treemap rectangle: `{ id, name, size, category, isDir, depth,
-rect: { x, y, w, h }, truncated }`. Tiles come back parent-before-child, so
-hit-testing scans backwards to find the innermost hit.
-
-`Category` — `"documents" | "images" | "videos" | "audio" | "archives" |
-"applications" | "developer" | "system" | "other"`.
+`Category` — `Documents | Images | Videos | Audio | Archives | Applications |
+Developer | System | Other`.
 
 ## Rust library API
 
 ```rust
 use helios_core::scan::{scan, ScanControl, ScanOptions};
 use helios_core::query::{largest, Filter};
-use helios_core::{report, snapshot, treemap};
+use helios_core::{report, snapshot};
 
 // 1. Scan, with progress and a control handle.
 let mut options = ScanOptions::new("/Volumes/Backup");
@@ -169,22 +108,14 @@ for entry in largest(&outcome.tree, &Filter::permissive(), 100, false) {
     println!("{:>12}  {}", entry.size, entry.path);
 }
 
-// 3. Lay out a treemap.
-let tiles = treemap::layout(
-    &outcome.tree,
-    helios_core::NodeId::ROOT,
-    treemap::Rect::new(0.0, 0.0, 1200.0, 800.0),
-    &treemap::TreemapOptions::default(),
-);
-
-// 4. Export a report.
-let meta = snapshot::SnapshotMeta { /* volume id, root, scanned_at, stats */ };
+// 3. Export a report.
+let meta = snapshot::SnapshotMeta::new(Some(&volume), path, outcome.stats.clone());
 let report = report::build(&outcome.tree, &meta, Some(&volume), &Filter::permissive(), 100);
 std::fs::write("report.pdf", report::to_pdf(&report))?;
 
-// 5. Cache it, and reuse it next time.
+// 4. Cache it, and reuse it next time.
 snapshot::save(&snapshot::Snapshot { meta, tree: outcome.tree })?;
-let previous = snapshot::load(&volume.id)?;
+let previous = snapshot::load_for_volume(&volume)?;   // verifies host and volume
 let faster = ScanOptions::new("/Volumes/Backup").with_previous(Arc::new(previous.tree));
 ```
 
@@ -201,8 +132,9 @@ tree.find(Path::new("/a/b/c"));    // look a node up by path
 
 ## Versioning
 
-The IPC surface is internal to the app and moves with it. The Rust crate follows
-semver: adding a command or an optional field is a minor bump; changing a return
-shape or `Node`'s layout is a major one. `snapshot::FORMAT_VERSION` is
+The command line follows the usual expectations: adding a flag is a minor
+change, changing what an existing flag means is a breaking one. The Rust crate
+follows semver — adding a function or an optional field is a minor bump;
+changing a return shape or `Node`'s layout is a major one. `snapshot::FORMAT_VERSION` is
 independent — bumping it invalidates caches, which is always safe, because a
 snapshot is never a source of truth.

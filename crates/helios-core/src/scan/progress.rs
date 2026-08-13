@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::control::ScanState;
 
-/// A progress sample, shipped to the UI at most once per
+/// A progress sample, delivered at most once per
 /// [`ScanOptions::progress_interval`](super::ScanOptions::progress_interval).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanProgress {

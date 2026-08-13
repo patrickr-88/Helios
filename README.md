@@ -1,116 +1,130 @@
 # Helios
 
-A fast, read-only disk usage visualizer. macOS first, Windows next.
+A fast, read-only disk usage analyzer. One 756 KB binary, no runtime, no
+installer, no configuration.
 
-Helios answers one question well: **where did my storage go?** It scans your
-volumes, shows you the answer as a treemap, a folder tree, a list of the largest
-things you own and a breakdown by kind of file — and it never modifies,
+Helios answers one question well: **where did my storage go?** Point it at a
+disk and it prints the biggest folders, the biggest files, a breakdown by kind
+of file, and a folder tree with sizes at every level — and it never modifies,
 deletes, moves or renames anything, and never touches the network.
 
-![Helios dashboard](docs/screenshots/dashboard.png)
+```console
+$ helios /opt
 
-*Real screenshots of the app running against a real filesystem — on the Linux
-development box, which is why the volume names are unglamorous and everything
-classifies as a system file. `docs/WIREFRAMES.md` annotates every screen.*
+/opt
+  2.2 GB in 37,497 files, 8,077 folders · 83 ms
+  on Root: 240 GB of 271 GB used (89%), 31 GB free
 
-![Helios treemap](docs/screenshots/treemap.png)
+Largest folders
+   1  pw-browsers       968 MB  ████▍····· 43.2%  /opt/pw-browsers
+   2  chrome-linux      625 MB  ██▊······· 27.9%  /opt/pw-browsers/chromium-1194/chrome-linux
+   3  chromium-1194     625 MB  ██▊······· 27.9%  /opt/pw-browsers/chromium-1194
+
+Largest files
+   1  chrome             463 MB  ██▏······· 20.7%  …/chrome-linux/chrome
+   2  headless_shell     306 MB  █▍········ 13.7%  …/chrome-linux/headless_shell
+   3  node               125 MB  ▌·········  5.6%  /opt/node22/bin/node
+
+By category
+  other             1.7 GB  ███████████████····· 74.8%  8,968 files
+  developer         374 MB  ███▍················ 16.7%  26,447 files
+  applications      158 MB  █▍··················  7.0%  620 files
+  system             21 MB  ▏···················  0.9%  13 files
+  documents          11 MB  ▏···················  0.5%  1,278 files
+  images            495 KB  ····················  0.0%  167 files
+  archives       842 bytes  ····················  0.0%  4 files
+```
+
+## Install
+
+```sh
+git clone https://github.com/patrickr-88/helios.git
+cd helios
+./install.sh
+```
+
+That builds one binary and puts it in `~/.local/bin`. Pass a different
+directory if you like (`./install.sh /usr/local/bin`), or skip the script
+entirely — `cargo install --path crates/helios-cli` does the same thing, and
+`cargo build --release` leaves the binary at `target/release/helios` to copy
+wherever you want.
+
+The only prerequisite is Rust. Uninstalling is deleting the binary.
+
+## Use
+
+```sh
+helios                        # every volume, with capacity and free space
+helios ~/Downloads            # scan a folder and summarize it
+helios /                      # scan the whole disk
+helios / --cache              # cache it — the next run takes milliseconds
+helios ~/Movies --tree -d 3   # folder tree, three levels deep
+helios / --find node_modules  # everything matching, biggest first
+helios / --files --min-size 1GB
+helios / -o storage-report.pdf   # .csv and .json work too
+```
+
+`helios --help` is the full list; there are fourteen flags and no subcommands.
+
+Ctrl-C stops a scan and still prints what it found, which is what you want three
+minutes into a full disk.
 
 ## What it does
 
 - **Every volume** — internal, external, network — with capacity, used and free.
-- **Treemap** sized by consumption, with drill-down into any folder.
-- **Folder tree** with a size and a share-of-parent bar at every level.
-- **Largest files and folders**, top 100 or top 1000, sortable and filterable.
+- **Largest files and folders**, with proportional bars.
+- **Folder tree** with a size and a share-of-parent at every level.
 - **Categories**: documents, images, videos, audio, archives, applications,
   developer files, system files, other.
-- **Search and filter** by name, path, extension, size, date, hidden, system.
-- **Reports** exported as CSV, JSON or PDF.
-- **Live progress** with a real estimate, and pause / resume / stop.
-- **Incremental rescans** that reuse unchanged folders — seconds, not minutes.
+- **Search and filter** by name, path, extension and size.
+- **Reports** as CSV, JSON or PDF.
+- **Live progress** with an honest estimate, and Ctrl-C to stop.
+- **Incremental rescans** that reuse unchanged folders — milliseconds, not
+  minutes.
+- **Portable mode**: runs from a flash drive, writes nothing to the host.
 
 ## What it will never do
 
 No writes to the volumes it scans. No network access of any kind. No telemetry,
 no analytics, no crash reporting, no update pings. Everything stays on your
-machine, and the app works with the Wi-Fi off.
+machine, and it works with the Wi-Fi off.
 
 Those are architectural properties, not promises in a README:
-`crates/helios-core/tests/read_only.rs` fails the build if a mutating
-filesystem call or a networking type appears anywhere in the engine, and the
-app's Tauri capability file grants no filesystem, shell, or HTTP plugin at all.
-
-## Try it
-
-The engine and CLI build anywhere Rust does:
-
-```sh
-cargo test                              # 75 tests, no platform assumptions
-cargo build --release -p helios-cli
-
-./target/release/helios volumes         # every mounted volume
-./target/release/helios scan ~/Movies   # scan and summarize
-./target/release/helios scan / --cache  # cache the result for fast rescans
-./target/release/helios report ~/Movies --format pdf --out report.pdf
-```
-
-The interface runs in a browser against a synthetic volume, with no Rust build
-and no app bundle:
-
-```sh
-npm install
-npm run dev            # http://localhost:5173
-```
-
-The real app (macOS):
-
-```sh
-npm run app            # development, with devtools
-npm run app:build      # .app and .dmg in src-tauri/target/release/bundle
-```
-
-It also runs entirely from a flash drive, scanning the machine it is plugged
-into and writing nothing to it — see [docs/PORTABLE.md](docs/PORTABLE.md):
-
-```sh
-./scripts/make-portable-drive.sh /Volumes/HELIOS
-/Volumes/HELIOS/helios paths      # confirms "portable — data stays with the app"
-```
-
-**[docs/MACOS.md](docs/MACOS.md) is the full Mac guide** — prerequisites, the
-three ways to run it, Full Disk Access, checking Helios against Finder, signing
-and notarization, and what to check if the macOS backend does not compile.
+`crates/helios-core/tests/read_only.rs` fails the build if a mutating filesystem
+call or a networking type appears anywhere in the engine.
 
 ## Measured
 
 On the Linux CI box this was developed on (4-core VM, ext4, warm page cache):
 
-| Workload | Result |
+| | |
 |---|---|
+| Binary | **756 KB**, no runtime, no shared libraries beyond libc |
+| Dependencies | **4 direct** (`serde`, `serde_json`, `crossbeam-channel`, `libc`) |
+| Startup | **2 ms** |
 | Scan `/usr` — 76,693 files, 7,843 folders | **1.2 s** |
 | Scan `/` — 149,955 files, 22,903 folders | **1.5 s** (~100k files/sec) |
 | Memory, 173k-node tree | **17 MB** |
-| Incremental rescan of `/usr`, nothing changed | **16 ms** (7,860 folders reused) |
-| Snapshot cache, 84,674 nodes | **6.0 MB** on disk |
+| Incremental rescan, nothing changed | **16 ms** (7,860 folders reused) |
 | Total bytes vs. `du -sb /usr` | **byte-identical** |
 
-Helios's numbers agreeing exactly with `du` matters more than the speed: a fast
-disk tool that quietly miscounts hardlinks, sparse files or symlinks is worse
-than a slow correct one.
+Agreeing exactly with `du` matters more than the speed: a fast disk tool that
+quietly miscounts hardlinks, sparse files or symlinks is worse than a slow
+correct one.
 
 ## How it fits together
 
 ```
-crates/helios-core     the engine — scanning, queries, treemap, reports
+crates/helios-core     the engine — scanning, queries, reports, snapshot cache
     └── platform/      the only OS-specific code: macos.rs, windows.rs, linux.rs
-crates/helios-cli      headless front end (also how the engine is benchmarked)
-src-tauri              desktop shell: window, IPC commands, ~450 lines
-src                    React interface
+crates/helios-cli      the program: argument parsing and text output
 docs                   architecture, engine design, API, roadmap
 ```
 
-The engine knows nothing about Tauri, and the UI knows nothing about
-filesystems. That seam is what makes the Windows port a matter of finishing one
-module rather than rewriting an app — see [docs/PLATFORM.md](docs/PLATFORM.md).
+Two crates, ~3,500 lines of Rust. The engine is a library with no knowledge of
+terminals, so the Windows port is one module and a future GUI — if anyone wants
+one — would be a second front end rather than a rewrite. See
+[docs/PLATFORM.md](docs/PLATFORM.md).
 
 ## Documentation
 
@@ -119,13 +133,12 @@ module rather than rewriting an app — see [docs/PLATFORM.md](docs/PLATFORM.md)
 | [MACOS.md](docs/MACOS.md) | Running, building and troubleshooting on a Mac |
 | [PORTABLE.md](docs/PORTABLE.md) | Running from a flash drive without touching the host |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design, data flow, storage design, folder layout |
-| [TECHNOLOGY-CHOICE.md](docs/TECHNOLOGY-CHOICE.md) | Electron vs. Tauri vs. SwiftUI, with the reasoning |
+| [TECHNOLOGY-CHOICE.md](docs/TECHNOLOGY-CHOICE.md) | Why Rust, why a CLI, and the GUI that was removed |
 | [SCAN-ENGINE.md](docs/SCAN-ENGINE.md) | The walker, threading model, correctness decisions |
-| [API.md](docs/API.md) | Every IPC command and the Rust library API |
+| [API.md](docs/API.md) | The command line, and the Rust library behind it |
 | [PLATFORM.md](docs/PLATFORM.md) | Platform-specific components and the Windows plan |
 | [PERFORMANCE.md](docs/PERFORMANCE.md) | Where the time and memory go, and what was done about it |
 | [SECURITY.md](docs/SECURITY.md) | Privacy, permissions, threat model |
-| [WIREFRAMES.md](docs/WIREFRAMES.md) | Every screen, annotated |
 | [ROADMAP.md](docs/ROADMAP.md) | MVP scope, phases, post-MVP |
 
 ## License

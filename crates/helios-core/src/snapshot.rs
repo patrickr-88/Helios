@@ -1,7 +1,7 @@
 //! On-disk snapshot cache.
 //!
-//! Rescanning a 2 TB volume to redraw a treemap the user looked at yesterday is
-//! wasted work, so every completed scan is persisted and reloaded on launch.
+//! Rescanning a 2 TB volume to answer a question you asked yesterday is wasted
+//! work, so `--cache` persists a completed scan and reuses it next time.
 //!
 //! The format is a hand-rolled, little-endian binary layout rather than JSON or
 //! a serde codec, for three reasons:
@@ -10,10 +10,9 @@
 //!   the OS compresses it.
 //! * **Speed.** Nodes are fixed-width records, so loading is a bulk read and a
 //!   tight decode loop — no parser, no per-node allocation.
-//! * **No dependency.** The engine's only third-party crates are `serde` (for
-//!   the IPC boundary) and `crossbeam-channel`. A cache format is not worth
-//!   adding a serialization framework and its version churn to an app whose
-//!   pitch is that it is small and auditable.
+//! * **No dependency.** A cache format is not worth adding a serialization
+//!   framework and its version churn to a program whose pitch is that it is
+//!   small and auditable.
 //!
 //! Files are written to a temporary path and renamed into place, so an
 //! interrupted write can never leave a half-written snapshot behind.

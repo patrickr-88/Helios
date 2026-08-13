@@ -1,9 +1,9 @@
 //! The platform seam.
 //!
 //! Everything OS-specific in Helios lives behind this module. The scan engine,
-//! query layer, reporting and the entire UI are written against the types and
-//! free functions declared here, so porting to a new OS means implementing one
-//! file — not touching the engine.
+//! query layer and reporting are written against the types and free functions
+//! declared here, so porting to a new OS means implementing one file — not
+//! touching the engine.
 //!
 //! Required surface for a new platform:
 //!
@@ -36,7 +36,7 @@ mod windows;
 #[cfg(windows)]
 use windows as imp;
 
-/// A mounted volume as presented on the Dashboard.
+/// A mounted volume.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Volume {
     /// Stable identity across rescans: device path on Unix, GUID path on
@@ -99,7 +99,7 @@ pub fn meta_from_dir_entry(entry: &std::fs::DirEntry) -> std::io::Result<EntryMe
     imp::meta_from_dir_entry(entry)
 }
 
-/// Directories the UI presents as a single opaque item (macOS bundles).
+/// Directories to treat as a single opaque item (macOS bundles).
 pub fn is_package(name: &str, is_dir: bool) -> bool {
     imp::is_package(name, is_dir)
 }
@@ -136,9 +136,9 @@ pub const PORTABLE_MARKER: &str = "helios-portable";
 ///
 /// 1. `HELIOS_DATA_DIR`, for scripted and one-off use.
 /// 2. Portable mode: a `helios-portable` marker file, or an existing
-///    `HeliosData` folder, sitting beside the app. Data then lives on the same
-///    device the app was launched from — the point being that running Helios
-///    from a flash drive leaves nothing behind on the host.
+///    `HeliosData` folder, sitting beside the binary. Data then lives on the
+///    same device the program was launched from — the point being that running
+///    Helios from a flash drive leaves nothing behind on the host.
 /// 3. The platform's application-support directory.
 ///
 /// Note this only ever affects where Helios writes; it never affects what it
@@ -189,12 +189,11 @@ pub(crate) fn resolve_data_dir(
         .unwrap_or(default)
 }
 
-/// The directory the app was launched from.
+/// The directory the program was launched from.
 ///
-/// On macOS the executable lives inside `Helios.app/Contents/MacOS/`, and
-/// writing anything inside a bundle breaks its code signature — so this returns
-/// the directory *containing* the bundle, which on a flash drive is the drive's
-/// root.
+/// Bundle-aware: if the executable ever ships inside a macOS `.app`, writing
+/// into the bundle would break its code signature, so this returns the
+/// directory *containing* the bundle instead.
 pub fn app_directory() -> Option<PathBuf> {
     std::env::current_exe().ok().map(|exe| {
         // Resolve symlinks first, so a `helios` symlinked onto the PATH still

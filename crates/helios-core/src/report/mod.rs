@@ -3,8 +3,8 @@
 //!
 //! A [`Report`] is a plain data snapshot, built once and then rendered into
 //! whichever format the user asked for. Keeping the render steps pure means
-//! exporting three formats costs one tree traversal, and the same structure is
-//! what the UI's Reports tab displays on screen.
+//! exporting three formats costs one tree traversal, and all three agree by
+//! construction.
 
 pub mod pdf;
 
@@ -191,7 +191,7 @@ fn csv_field(value: &str) -> String {
     }
 }
 
-/// Colors for the category bars, matched to the UI's palette.
+/// Colors for the category bars in the PDF.
 fn category_color(category: Category) -> (f32, f32, f32) {
     match category {
         Category::Documents => (0.29, 0.51, 0.91),
