@@ -65,8 +65,12 @@ The real app (macOS):
 
 ```sh
 npm run app            # development, with devtools
-npm run app:build      # signed .app and .dmg in src-tauri/target/release/bundle
+npm run app:build      # .app and .dmg in src-tauri/target/release/bundle
 ```
+
+**[docs/MACOS.md](docs/MACOS.md) is the full Mac guide** — prerequisites, the
+three ways to run it, Full Disk Access, checking Helios against Finder, signing
+and notarization, and what to check if the macOS backend does not compile.
 
 ## Measured
 
@@ -104,6 +108,7 @@ module rather than rewriting an app — see [docs/PLATFORM.md](docs/PLATFORM.md)
 
 | Document | What's in it |
 |---|---|
+| [MACOS.md](docs/MACOS.md) | Running, building and troubleshooting on a Mac |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design, data flow, storage design, folder layout |
 | [TECHNOLOGY-CHOICE.md](docs/TECHNOLOGY-CHOICE.md) | Electron vs. Tauri vs. SwiftUI, with the reasoning |
 | [SCAN-ENGINE.md](docs/SCAN-ENGINE.md) | The walker, threading model, correctness decisions |

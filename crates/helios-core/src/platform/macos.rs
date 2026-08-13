@@ -119,11 +119,14 @@ pub fn volumes() -> Vec<Volume> {
                 return None;
             }
 
-            let block = m.f_bsize as u64;
+            // `u64::from` rather than `as`: f_bsize is u32 and f_bavail is u64
+            // on current Apple targets, and the reflexive `From` impl makes the
+            // widening explicit without a cast that lints as redundant.
+            let block = u64::from(m.f_bsize);
             let total = m.f_blocks * block;
             // f_bavail (not f_bfree) is what the user can actually use; the
             // difference is the root reserve, which Finder also hides.
-            let free = m.f_bavail.max(0) as u64 * block;
+            let free = m.f_bavail * block;
             if total == 0 {
                 return None;
             }
